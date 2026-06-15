@@ -1,0 +1,72 @@
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider      = "prisma-client-js"
+  binaryTargets = ["native", "linux-musl-openssl-3.0.x"]
+}
+
+enum RecurrenceType {
+  NONE
+  DAILY
+  WEEKLY
+  EVERY_N_WEEKS
+  MONTHLY
+  SPECIFIC_DATE
+}
+
+model User {
+  id                   String    @id @default(cuid())
+  email                String    @unique
+  passwordHash         String
+  name                 String?
+  createdAt            DateTime  @default(now())
+  securityQuestion     String?
+  securityAnswerHash   String?
+  projects             Project[]
+}
+
+model Project {
+  id              String         @id @default(cuid())
+  title           String
+  description     String?
+  userId          String
+  createdAt       DateTime       @default(now())
+  updatedAt       DateTime       @updatedAt
+  recurrenceType  RecurrenceType @default(NONE)
+  dayOfWeek       Int?
+  intervalWeeks   Int?
+  dayOfMonth      Int?
+  specificDate    DateTime?
+  dueDate         DateTime?
+  lastCompletedAt DateTime?
+  icon            String?
+  user            User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  objectives      Objective[]
+  inventoryItems  InventoryItem[]
+
+  @@index([userId])
+}
+
+model Objective {
+  id          String  @id @default(cuid())
+  title       String
+  isCompleted Boolean @default(false)
+  order       Int
+  projectId   String
+  project     Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@index([projectId])
+}
+
+model InventoryItem {
+  id        String  @id @default(cuid())
+  name      String
+  quantity  Int     @default(0)
+  projectId String
+  project   Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@index([projectId])
+}

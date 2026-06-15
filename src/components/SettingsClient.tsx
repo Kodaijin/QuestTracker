@@ -1,0 +1,372 @@
+'use client';
+
+import { useState, useTransition } from 'react';
+import Link from 'next/link';
+import { useRouter } from 'next/navigation';
+import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
+import {
+  changeEmail,
+  changePassword,
+  changeSecurityQuestion,
+} from '@/app/actions/account';
+
+interface Props {
+  currentEmail: string;
+}
+
+// ── Shared sub-components ─────────────────────────────────────────────────────
+
+function ErrorBox({ message }: { message: string }) {
+  return (
+    <p
+      role="alert"
+      className="text-sm text-red-300 bg-red-950/50 border border-red-900/60 rounded-lg px-3 py-2"
+    >
+      {message}
+    </p>
+  );
+}
+
+function SuccessBox({ message }: { message: string }) {
+  return (
+    <p
+      role="status"
+      className="text-sm text-emerald-300 bg-emerald-950/50 border border-emerald-900/60 rounded-lg px-3 py-2"
+    >
+      {message}
+    </p>
+  );
+}
+
+// ── Main component ────────────────────────────────────────────────────────────
+
+export default function SettingsClient({ currentEmail }: Props) {
+  const router = useRouter();
+
+  // ── Change email state ───────────────────────────────────────────────────────
+  const [displayedEmail, setDisplayedEmail] = useState(currentEmail);
+  const [emailNewEmail, setEmailNewEmail] = useState('');
+  const [emailCurrentPassword, setEmailCurrentPassword] = useState('');
+  const [emailError, setEmailError] = useState<string | null>(null);
+  const [emailSuccess, setEmailSuccess] = useState<string | null>(null);
+  const [emailPending, startEmailTransition] = useTransition();
+
+  // ── Change password state ────────────────────────────────────────────────────
+  const [pwCurrentPassword, setPwCurrentPassword] = useState('');
+  const [pwNewPassword, setPwNewPassword] = useState('');
+  const [pwError, setPwError] = useState<string | null>(null);
+  const [pwSuccess, setPwSuccess] = useState<string | null>(null);
+  const [pwPending, startPwTransition] = useTransition();
+
+  // ── Change security question state ───────────────────────────────────────────
+  const [sqCurrentPassword, setSqCurrentPassword] = useState('');
+  const [sqQuestion, setSqQuestion] = useState('');
+  const [sqAnswer, setSqAnswer] = useState('');
+  const [sqError, setSqError] = useState<string | null>(null);
+  const [sqSuccess, setSqSuccess] = useState<string | null>(null);
+  const [sqPending, startSqTransition] = useTransition();
+
+  // ── Handlers ─────────────────────────────────────────────────────────────────
+
+  function handleEmailSubmit(e: React.FormEvent<HTMLFormElement>) {
+    e.preventDefault();
+    setEmailError(null);
+    setEmailSuccess(null);
+
+    startEmailTransition(async () => {
+      const result = await changeEmail({
+        currentPassword: emailCurrentPassword,
+        newEmail: emailNewEmail,
+      });
+
+      if (!result.ok) {
+        setEmailError(result.error);
+        return;
+      }
+
+      setDisplayedEmail(emailNewEmail.toLowerCase());
+      setEmailNewEmail('');
+      setEmailCurrentPassword('');
+      setEmailSuccess('Email updated. Use your new email next time you sign in.');
+      router.refresh();
+    });
+  }
+
+  function handlePasswordSubmit(e: React.FormEvent<HTMLFormElement>) {
+    e.preventDefault();
+    setPwError(null);
+    setPwSuccess(null);
+
+    startPwTransition(async () => {
+      const result = await changePassword({
+        currentPassword: pwCurrentPassword,
+        newPassword: pwNewPassword,
+      });
+
+      if (!result.ok) {
+        setPwError(result.error);
+        return;
+      }
+
+      setPwCurrentPassword('');
+      setPwNewPassword('');
+      setPwSuccess('Password updated.');
+    });
+  }
+
+  function handleSecurityQuestionSubmit(e: React.FormEvent<HTMLFormElement>) {
+    e.preventDefault();
+    setSqError(null);
+    setSqSuccess(null);
+
+    startSqTransition(async () => {
+      const result = await changeSecurityQuestion({
+        currentPassword: sqCurrentPassword,
+        securityQuestion: sqQuestion,
+        securityAnswer: sqAnswer,
+      });
+
+      if (!result.ok) {
+        setSqError(result.error);
+        return;
+      }
+
+      setSqQuestion('');
+      setSqAnswer('');
+      setSqSuccess('Security question updated.');
+    });
+  }
+
+  // ── Render ────────────────────────────────────────────────────────────────────
+
+  return (
+    <main className="max-w-2xl mx-auto px-6 py-12">
+      {/* Back link */}
+      <Link
+        href="/"
+        className="inline-flex items-center gap-1.5 text-sm text-zinc-400 hover:text-zinc-200 mb-8 transition-colors"
+      >
+        <svg
+          xmlns="http://www.w3.org/2000/svg"
+          viewBox="0 0 20 20"
+          fill="currentColor"
+          className="w-4 h-4"
+        >
+          <path
+            fillRule="evenodd"
+            d="M17 10a.75.75 0 01-.75.75H5.612l4.158 3.96a.75.75 0 11-1.04 1.08l-5.5-5.25a.75.75 0 010-1.08l5.5-5.25a.75.75 0 111.04 1.08L5.612 9.25H16.25A.75.75 0 0117 10z"
+            clipRule="evenodd"
+          />
+        </svg>
+        Dashboard
+      </Link>
+
+      <h1 className="text-3xl font-bold tracking-tight text-zinc-50 mb-8">
+        Account settings
+      </h1>
+
+      <div className="space-y-6">
+        {/* ── Change email ──────────────────────────────────────────────────── */}
+        <Card>
+          <CardHeader>
+            <CardTitle>Change email</CardTitle>
+            <p className="text-sm text-zinc-400">
+              Current email:{' '}
+              <span className="text-zinc-200 font-medium">{displayedEmail}</span>
+            </p>
+          </CardHeader>
+          <CardContent className="pt-6">
+            <form onSubmit={handleEmailSubmit} className="space-y-4" noValidate>
+              <div>
+                <label
+                  htmlFor="email-new"
+                  className="block text-sm font-medium text-zinc-300 mb-1.5"
+                >
+                  New email
+                </label>
+                <input
+                  id="email-new"
+                  type="email"
+                  value={emailNewEmail}
+                  onChange={(e) => setEmailNewEmail(e.target.value)}
+                  autoComplete="email"
+                  required
+                  className="field"
+                />
+              </div>
+
+              <div>
+                <label
+                  htmlFor="email-current-pw"
+                  className="block text-sm font-medium text-zinc-300 mb-1.5"
+                >
+                  Current password
+                </label>
+                <input
+                  id="email-current-pw"
+                  type="password"
+                  value={emailCurrentPassword}
+                  onChange={(e) => setEmailCurrentPassword(e.target.value)}
+                  autoComplete="current-password"
+                  required
+                  className="field"
+                />
+              </div>
+
+              {emailError && <ErrorBox message={emailError} />}
+              {emailSuccess && <SuccessBox message={emailSuccess} />}
+
+              <button
+                type="submit"
+                disabled={emailPending}
+                className="rounded-lg bg-gradient-to-b from-indigo-500 to-indigo-600 hover:from-indigo-400 hover:to-indigo-500 shadow-lg shadow-indigo-600/25 disabled:opacity-60 disabled:cursor-not-allowed text-white text-sm font-medium px-5 py-2.5 transition-all"
+              >
+                {emailPending ? 'Saving…' : 'Update email'}
+              </button>
+            </form>
+          </CardContent>
+        </Card>
+
+        {/* ── Change password ───────────────────────────────────────────────── */}
+        <Card>
+          <CardHeader>
+            <CardTitle>Change password</CardTitle>
+          </CardHeader>
+          <CardContent className="pt-6">
+            <form onSubmit={handlePasswordSubmit} className="space-y-4" noValidate>
+              <div>
+                <label
+                  htmlFor="pw-current"
+                  className="block text-sm font-medium text-zinc-300 mb-1.5"
+                >
+                  Current password
+                </label>
+                <input
+                  id="pw-current"
+                  type="password"
+                  value={pwCurrentPassword}
+                  onChange={(e) => setPwCurrentPassword(e.target.value)}
+                  autoComplete="current-password"
+                  required
+                  className="field"
+                />
+              </div>
+
+              <div>
+                <label
+                  htmlFor="pw-new"
+                  className="block text-sm font-medium text-zinc-300 mb-1.5"
+                >
+                  New password
+                </label>
+                <input
+                  id="pw-new"
+                  type="password"
+                  value={pwNewPassword}
+                  onChange={(e) => setPwNewPassword(e.target.value)}
+                  autoComplete="new-password"
+                  minLength={8}
+                  required
+                  className="field"
+                />
+                <p className="mt-1 text-xs text-zinc-500">Min 8 characters.</p>
+              </div>
+
+              {pwError && <ErrorBox message={pwError} />}
+              {pwSuccess && <SuccessBox message={pwSuccess} />}
+
+              <button
+                type="submit"
+                disabled={pwPending}
+                className="rounded-lg bg-gradient-to-b from-indigo-500 to-indigo-600 hover:from-indigo-400 hover:to-indigo-500 shadow-lg shadow-indigo-600/25 disabled:opacity-60 disabled:cursor-not-allowed text-white text-sm font-medium px-5 py-2.5 transition-all"
+              >
+                {pwPending ? 'Saving…' : 'Update password'}
+              </button>
+            </form>
+          </CardContent>
+        </Card>
+
+        {/* ── Change security question ──────────────────────────────────────── */}
+        <Card>
+          <CardHeader>
+            <CardTitle>Change security question</CardTitle>
+          </CardHeader>
+          <CardContent className="pt-6">
+            <form
+              onSubmit={handleSecurityQuestionSubmit}
+              className="space-y-4"
+              noValidate
+            >
+              <div>
+                <label
+                  htmlFor="sq-current-pw"
+                  className="block text-sm font-medium text-zinc-300 mb-1.5"
+                >
+                  Current password
+                </label>
+                <input
+                  id="sq-current-pw"
+                  type="password"
+                  value={sqCurrentPassword}
+                  onChange={(e) => setSqCurrentPassword(e.target.value)}
+                  autoComplete="current-password"
+                  required
+                  className="field"
+                />
+              </div>
+
+              <div>
+                <label
+                  htmlFor="sq-question"
+                  className="block text-sm font-medium text-zinc-300 mb-1.5"
+                >
+                  New security question / hint
+                </label>
+                <input
+                  id="sq-question"
+                  type="text"
+                  value={sqQuestion}
+                  onChange={(e) => setSqQuestion(e.target.value)}
+                  autoComplete="off"
+                  placeholder="e.g. Name of your first pet?"
+                  required
+                  className="field"
+                />
+              </div>
+
+              <div>
+                <label
+                  htmlFor="sq-answer"
+                  className="block text-sm font-medium text-zinc-300 mb-1.5"
+                >
+                  New recovery answer
+                </label>
+                <input
+                  id="sq-answer"
+                  type="text"
+                  value={sqAnswer}
+                  onChange={(e) => setSqAnswer(e.target.value)}
+                  autoComplete="off"
+                  required
+                  className="field"
+                />
+                <p className="mt-1 text-xs text-zinc-500">Case-insensitive.</p>
+              </div>
+
+              {sqError && <ErrorBox message={sqError} />}
+              {sqSuccess && <SuccessBox message={sqSuccess} />}
+
+              <button
+                type="submit"
+                disabled={sqPending}
+                className="rounded-lg bg-gradient-to-b from-indigo-500 to-indigo-600 hover:from-indigo-400 hover:to-indigo-500 shadow-lg shadow-indigo-600/25 disabled:opacity-60 disabled:cursor-not-allowed text-white text-sm font-medium px-5 py-2.5 transition-all"
+              >
+                {sqPending ? 'Saving…' : 'Update security question'}
+              </button>
+            </form>
+          </CardContent>
+        </Card>
+      </div>
+    </main>
+  );
+}
