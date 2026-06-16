@@ -15,6 +15,7 @@ import { Progress } from '@/components/ui/progress';
 import { cn } from '@/lib/utils';
 import IconPicker from '@/components/IconPicker';
 import LogoutButton from '@/components/LogoutButton';
+import CountUp from '@/components/CountUp';
 
 interface Props {
   initialProjects: ProjectWithRelations[];
@@ -237,7 +238,7 @@ export default function DashboardClient({ initialProjects }: Props) {
     }
   }
 
-  function renderQuestCard(project: ProjectWithRelations) {
+  function renderQuestCard(project: ProjectWithRelations, index = 0) {
     const { done, total } = questProgress(project, projects);
     const pct = total > 0 ? Math.round((done / total) * 100) : 0;
     const status = getQuestStatus(project, projects);
@@ -261,7 +262,11 @@ export default function DashboardClient({ initialProjects }: Props) {
       : statusCardStyles[status];
 
     return (
-      <div key={project.id} className="relative group">
+      <div
+        key={project.id}
+        className="animate-card-enter relative group"
+        style={{ animationDelay: `${Math.min(index, 12) * 60}ms` }}
+      >
         <Link
           href={`/projects/${project.id}`}
           className="block rounded-xl focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 focus-visible:ring-offset-2 focus-visible:ring-offset-zinc-950"
@@ -373,15 +378,15 @@ export default function DashboardClient({ initialProjects }: Props) {
       {/* Stats row */}
       <div className="grid grid-cols-3 gap-3 mb-8">
         <div className="rounded-xl border border-zinc-800/80 bg-zinc-900/50 px-4 py-3 flex flex-col items-center gap-0.5">
-          <span className="text-2xl font-bold tabular-nums text-zinc-100">{accepted}</span>
+          <CountUp value={accepted} className="text-2xl font-bold tabular-nums text-zinc-100" />
           <span className="text-xs font-medium text-zinc-400 uppercase tracking-wide">Accepted</span>
         </div>
         <div className="rounded-xl border border-indigo-500/30 bg-indigo-950/30 px-4 py-3 flex flex-col items-center gap-0.5">
-          <span className="text-2xl font-bold tabular-nums text-indigo-300">{inProgress}</span>
+          <CountUp value={inProgress} className="text-2xl font-bold tabular-nums text-indigo-300" />
           <span className="text-xs font-medium text-indigo-400 uppercase tracking-wide">In Progress</span>
         </div>
         <div className="rounded-xl border border-emerald-500/30 bg-emerald-950/30 px-4 py-3 flex flex-col items-center gap-0.5">
-          <span className="text-2xl font-bold tabular-nums text-emerald-300">{completed}</span>
+          <CountUp value={completed} className="text-2xl font-bold tabular-nums text-emerald-300" />
           <span className="text-xs font-medium text-emerald-400 uppercase tracking-wide">Completed</span>
         </div>
       </div>
@@ -753,7 +758,7 @@ export default function DashboardClient({ initialProjects }: Props) {
             <p className="text-sm text-zinc-500">No active quests.</p>
           ) : (
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
-              {activeProjects.map((project) => renderQuestCard(project))}
+              {activeProjects.map((project, i) => renderQuestCard(project, i))}
             </div>
           )}
 
@@ -789,7 +794,7 @@ export default function DashboardClient({ initialProjects }: Props) {
 
               {showCompleted && (
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
-                  {completedProjects.map((project) => renderQuestCard(project))}
+                  {completedProjects.map((project, i) => renderQuestCard(project, i))}
                 </div>
               )}
             </>

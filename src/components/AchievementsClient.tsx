@@ -55,11 +55,15 @@ export default function AchievementsClient({ achievements }: Props) {
       </div>
 
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-        {achievements.map((a) => (
-          <Card
+        {achievements.map((a, i) => (
+          <div
             key={a.key}
+            className="animate-card-enter"
+            style={{ animationDelay: `${Math.min(i, 16) * 35}ms` }}
+          >
+          <Card
             className={cn(
-              'transition-colors',
+              'h-full transition-colors',
               a.unlocked
                 ? 'border-amber-500/40 bg-amber-950/10'
                 : 'border-zinc-800/80 opacity-60',
@@ -95,6 +99,7 @@ export default function AchievementsClient({ achievements }: Props) {
               </div>
             </CardContent>
           </Card>
+          </div>
         ))}
       </div>
     </main>

@@ -9,11 +9,7 @@
 
   html {
     scroll-behavior: smooth;
-  }
-
-  body {
-    @apply bg-zinc-950 text-zinc-100 antialiased;
-    min-height: 100vh;
+    /* Always-on dark backdrop, painted behind the ambient motion layer. */
     background-color: #09090b;
     background-image: radial-gradient(
       48rem 36rem at 50% -8%,
@@ -22,6 +18,13 @@
     );
     background-attachment: fixed;
     background-repeat: no-repeat;
+  }
+
+  body {
+    @apply text-zinc-100 antialiased;
+    min-height: 100vh;
+    /* Transparent so the fixed AmbientBackground layer (-z-10) shows through. */
+    background-color: transparent;
   }
 
   ::selection {
@@ -141,17 +144,106 @@
   animation: toast-in-out 3s ease-in-out forwards;
 }
 
+/* ── Ambient background: aurora + motes ───────────────────────────────────── */
+
+/* Large glow blobs slowly drift and breathe. --tx/--ty set the travel per blob. */
+@keyframes aurora-drift {
+  0%   { transform: translate(0, 0) scale(1); }
+  50%  { transform: translate(var(--tx, 6%), var(--ty, -5%)) scale(1.18); }
+  100% { transform: translate(0, 0) scale(1); }
+}
+.aurora-blob {
+  position: absolute;
+  border-radius: 9999px;
+  filter: blur(70px);
+  will-change: transform;
+  animation: aurora-drift var(--dur, 18s) ease-in-out infinite;
+  animation-delay: var(--delay, 0s);
+}
+
+/* Specks of light rising and fading. --dx adds a little horizontal sway. */
+@keyframes mote-rise {
+  0%   { transform: translate(0, 0) scale(0.6); opacity: 0; }
+  10%  { opacity: 1; }
+  90%  { opacity: 0.9; }
+  100% { transform: translate(var(--dx, 0), -110vh) scale(1); opacity: 0; }
+}
+.mote {
+  position: absolute;
+  bottom: -2rem;
+  border-radius: 9999px;
+  background: radial-gradient(circle, rgba(196, 181, 253, 0.95), rgba(129, 140, 248, 0) 70%);
+  will-change: transform, opacity;
+  animation: mote-rise var(--dur, 16s) linear infinite;
+  animation-delay: var(--delay, 0s);
+}
+
+/* ── Element animations ───────────────────────────────────────────────────── */
+
+/* Cards fade up into place on mount (staggered via inline animation-delay). */
+@keyframes card-enter {
+  0%   { opacity: 0; transform: translateY(14px) scale(0.98); }
+  100% { opacity: 1; transform: translateY(0) scale(1); }
+}
+.animate-card-enter {
+  animation: card-enter 0.5s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+/* A light sheen sweeping across a progress fill. */
+@keyframes progress-shimmer {
+  0%   { transform: translateX(-150%); }
+  100% { transform: translateX(250%); }
+}
+.progress-shimmer {
+  animation: progress-shimmer 2.2s ease-in-out infinite;
+}
+
+/* A diagonal light sweep across buttons on hover. */
+.btn-shine::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 60%;
+  height: 100%;
+  background: linear-gradient(
+    100deg,
+    transparent 0%,
+    rgba(255, 255, 255, 0.28) 50%,
+    transparent 100%
+  );
+  transform: translateX(-180%) skewX(-18deg);
+  pointer-events: none;
+}
+.btn-shine:hover::before {
+  transform: translateX(280%) skewX(-18deg);
+  transition: transform 0.7s ease;
+}
+
 /* Respect users who prefer reduced motion: drop the movement, keep things readable. */
 @media (prefers-reduced-motion: reduce) {
   .animate-objective-glow,
   .animate-check-pop,
   .sparkle-burst-particle,
   .animate-quest-glow,
-  .sparkle-rise-particle {
+  .sparkle-rise-particle,
+  .aurora-blob,
+  .mote,
+  .animate-card-enter,
+  .progress-shimmer {
     animation: none !important;
   }
   .sparkle-burst-particle,
-  .sparkle-rise-particle {
+  .sparkle-rise-particle,
+  .mote,
+  .progress-shimmer {
+    display: none;
+  }
+  .animate-card-enter {
+    opacity: 1 !important;
+    transform: none !important;
+  }
+  .btn-shine::before {
     display: none;
   }
 }
