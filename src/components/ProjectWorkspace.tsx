@@ -7,7 +7,7 @@ import { RecurrenceType } from '@prisma/client';
 import { useProjectStore } from '@/store/useProjectStore';
 import {
   toggleObjective,
-  updateInventoryQuantity,
+  toggleInventoryItem,
   createObjective,
   createInventoryItem,
   updateProject,
@@ -58,8 +58,8 @@ export default function ProjectWorkspace({ initialProjects, projectId }: Props) 
   const storeProjects = useProjectStore((s) => s.projects);
   const optimisticToggle = useProjectStore((s) => s.optimisticToggleObjective);
   const rollbackObjective = useProjectStore((s) => s.rollbackObjective);
-  const optimisticSetQty = useProjectStore((s) => s.optimisticSetQuantity);
-  const rollbackQuantity = useProjectStore((s) => s.rollbackQuantity);
+  const optimisticToggleItem = useProjectStore((s) => s.optimisticToggleInventoryItem);
+  const rollbackInventoryItem = useProjectStore((s) => s.rollbackInventoryItem);
   const optimisticUpdateProj = useProjectStore((s) => s.optimisticUpdateProject);
   const rollbackProj = useProjectStore((s) => s.rollbackProject);
   const optimisticRenameObj = useProjectStore((s) => s.optimisticRenameObjective);
@@ -77,7 +77,6 @@ export default function ProjectWorkspace({ initialProjects, projectId }: Props) 
   const [isAddingObj, startAddObj] = useTransition();
 
   const [newItemName, setNewItemName] = useState('');
-  const [newItemQty, setNewItemQty] = useState('0');
   const [newItemError, setNewItemError] = useState<string | null>(null);
   const [isAddingItem, startAddItem] = useTransition();
 
@@ -151,7 +150,7 @@ export default function ProjectWorkspace({ initialProjects, projectId }: Props) 
     specificDate: project.specificDate ? new Date(project.specificDate) : null,
   });
 
-  // ── Handlers: toggle + quantity (existing) ────────────────────────────────────
+  // ── Handlers: toggle objective + gather item ──────────────────────────────────
 
   async function handleToggle(objectiveId: string) {
     const prev = optimisticToggle(objectiveId);
@@ -162,12 +161,12 @@ export default function ProjectWorkspace({ initialProjects, projectId }: Props) 
     }
   }
 
-  async function handleQtyChange(itemId: string, newQty: number) {
-    const prev = optimisticSetQty(itemId, newQty);
+  async function handleToggleItem(itemId: string) {
+    const prev = optimisticToggleItem(itemId);
     try {
-      await updateInventoryQuantity({ itemId, quantity: newQty });
+      await toggleInventoryItem({ itemId });
     } catch {
-      rollbackQuantity(itemId, prev);
+      rollbackInventoryItem(itemId, prev);
     }
   }
 
@@ -194,16 +193,10 @@ export default function ProjectWorkspace({ initialProjects, projectId }: Props) 
     setNewItemError(null);
     const name = newItemName.trim();
     if (!name) { setNewItemError('Name is required'); return; }
-    const quantity = Number(newItemQty);
-    if (!Number.isInteger(quantity) || quantity < 0) {
-      setNewItemError('Quantity must be a whole number of 0 or more');
-      return;
-    }
     startAddItem(async () => {
       try {
-        await createInventoryItem({ projectId, name, quantity });
+        await createInventoryItem({ projectId, name });
         setNewItemName('');
-        setNewItemQty('0');
         router.refresh();
       } catch (err) {
         setNewItemError(err instanceof Error ? err.message : 'Failed to add item');
@@ -794,7 +787,19 @@ export default function ProjectWorkspace({ initialProjects, projectId }: Props) 
                     </>
                   ) : (
                     <>
-                      <span className="text-sm text-zinc-200 flex-1 min-w-0 truncate">
+                      <Checkbox
+                        checked={item.gathered}
+                        onCheckedChange={() => handleToggleItem(item.id)}
+                        aria-label={`Mark "${item.name}" as gathered`}
+                      />
+                      <span
+                        className={cn(
+                          'text-sm flex-1 min-w-0 truncate transition-colors',
+                          item.gathered
+                            ? 'text-zinc-500 line-through'
+                            : 'text-zinc-200',
+                        )}
+                      >
                         {item.name}
                       </span>
                       <div className="opacity-0 group-hover:opacity-100 transition-opacity flex items-center gap-1 shrink-0">
@@ -812,28 +817,6 @@ export default function ProjectWorkspace({ initialProjects, projectId }: Props) 
                         >
                           ✕
                         </button>
-                      </div>
-                      <div className="flex items-center gap-2 shrink-0">
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          disabled={item.quantity === 0}
-                          onClick={() => handleQtyChange(item.id, item.quantity - 1)}
-                          aria-label={`Decrease ${item.name}`}
-                        >
-                          −
-                        </Button>
-                        <span className="w-8 text-center text-sm font-mono tabular-nums text-zinc-100">
-                          {item.quantity}
-                        </span>
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          onClick={() => handleQtyChange(item.id, item.quantity + 1)}
-                          aria-label={`Increase ${item.name}`}
-                        >
-                          +
-                        </Button>
                       </div>
                     </>
                   )}
@@ -857,15 +840,6 @@ export default function ProjectWorkspace({ initialProjects, projectId }: Props) 
                 onChange={(e) => setNewItemName(e.target.value)}
                 placeholder="Add an item…"
                 className="field flex-1"
-              />
-              <input
-                type="number"
-                min={0}
-                step={1}
-                value={newItemQty}
-                onChange={(e) => setNewItemQty(e.target.value)}
-                aria-label="Starting quantity"
-                className="field w-20 text-center"
               />
               <Button type="submit" disabled={isAddingItem}>
                 {isAddingItem ? 'Adding…' : 'Add'}

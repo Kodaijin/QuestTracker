@@ -18,14 +18,15 @@ enum RecurrenceType {
 }
 
 model User {
-  id                   String    @id @default(cuid())
-  email                String    @unique
+  id                   String                 @id @default(cuid())
+  email                String                 @unique
   passwordHash         String
   name                 String?
-  createdAt            DateTime  @default(now())
+  createdAt            DateTime               @default(now())
   securityQuestion     String?
   securityAnswerHash   String?
   projects             Project[]
+  achievements         UnlockedAchievement[]
 }
 
 model Project {
@@ -64,9 +65,20 @@ model Objective {
 model InventoryItem {
   id        String  @id @default(cuid())
   name      String
-  quantity  Int     @default(0)
+  gathered  Boolean @default(false)
   projectId String
   project   Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
 
   @@index([projectId])
+}
+
+model UnlockedAchievement {
+  id         String   @id @default(cuid())
+  key        String
+  unlockedAt DateTime @default(now())
+  userId     String
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, key])
+  @@index([userId])
 }

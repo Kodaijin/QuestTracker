@@ -18,7 +18,6 @@
  */
 
 import { readFileSync } from 'node:fs';
-import { z } from 'zod';
 import { registerUser } from '../src/app/actions/auth';
 import type { RegisterResult } from '../src/app/actions/auth';
 import { prisma as db } from '../src/lib/prisma';
@@ -257,36 +256,31 @@ async function step5ToggleObjective(projectId: string): Promise<string> {
 
 async function step6Inventory(projectId: string): Promise<void> {
   const item = await db.inventoryItem.create({
-    data: { name: 'Smoke Potion', quantity: 0, projectId },
+    data: { name: 'Smoke Potion', gathered: false, projectId },
   });
 
-  const TARGET = 42;
+  // Toggle gathered false → true, mirroring toggleInventoryItem.
   const updated = await db.inventoryItem.update({
     where: { id: item.id },
-    data: { quantity: TARGET },
+    data: { gathered: !item.gathered },
   });
 
   must(
-    updated.quantity === TARGET,
+    updated.gathered === true,
     'INVENTORY:update',
-    `quantity=${updated.quantity}`,
-    `quantity=${TARGET}`,
+    `gathered=${String(updated.gathered)}`,
+    'gathered=true',
   );
 
   const refetched = await db.inventoryItem.findUniqueOrThrow({ where: { id: item.id } });
   must(
-    refetched.quantity === TARGET,
+    refetched.gathered === true,
     'INVENTORY:persist',
-    `quantity=${refetched.quantity}`,
-    `quantity=${TARGET} (durable)`,
+    `gathered=${String(refetched.gathered)}`,
+    'gathered=true (durable)',
   );
 
-  // The schema in updateInventoryQuantity uses z.number().int().min(0).
-  const qtySchema = z.number().int().min(0);
-  const negResult = qtySchema.safeParse(-1);
-  must(!negResult.success, 'INVENTORY:negative_reject', 'Zod accepted -1', 'Zod rejected -1');
-
-  ok('INVENTORY', `qty set to ${TARGET}, persisted; negative quantity rejected by schema`);
+  ok('INVENTORY', 'gathered toggled false→true, confirmed on re-fetch');
 }
 
 // ── Step 7: OWNERSHIP ─────────────────────────────────────────────────────────

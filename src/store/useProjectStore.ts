@@ -19,9 +19,9 @@ type ProjectStore = {
   optimisticToggleObjective: (objectiveId: string) => boolean;
   rollbackObjective: (objectiveId: string, previousValue: boolean) => void;
 
-  // Inventory quantity (existing)
-  optimisticSetQuantity: (itemId: string, qty: number) => number;
-  rollbackQuantity: (itemId: string, previousQty: number) => void;
+  // Inventory gathered toggle
+  optimisticToggleInventoryItem: (itemId: string) => boolean;
+  rollbackInventoryItem: (itemId: string, previousValue: boolean) => void;
 
   // Project rename
   optimisticUpdateProject: (projectId: string, title: string) => string;
@@ -90,14 +90,14 @@ export const useProjectStore = create<ProjectStore>()((set, get) => ({
     }));
   },
 
-  // ── Inventory quantity ────────────────────────────────────────────────────────
+  // ── Inventory gathered toggle ─────────────────────────────────────────────────
 
-  optimisticSetQuantity(itemId, qty) {
-    let previousQty = 0;
+  optimisticToggleInventoryItem(itemId) {
+    let previousValue = false;
     for (const project of get().projects) {
       const item = project.inventoryItems.find((i) => i.id === itemId);
       if (item) {
-        previousQty = item.quantity;
+        previousValue = item.gathered;
         break;
       }
     }
@@ -105,19 +105,19 @@ export const useProjectStore = create<ProjectStore>()((set, get) => ({
       projects: state.projects.map((project) => ({
         ...project,
         inventoryItems: project.inventoryItems.map((item) =>
-          item.id === itemId ? { ...item, quantity: qty } : item,
+          item.id === itemId ? { ...item, gathered: !item.gathered } : item,
         ),
       })),
     }));
-    return previousQty;
+    return previousValue;
   },
 
-  rollbackQuantity(itemId, previousQty) {
+  rollbackInventoryItem(itemId, previousValue) {
     set((state) => ({
       projects: state.projects.map((project) => ({
         ...project,
         inventoryItems: project.inventoryItems.map((item) =>
-          item.id === itemId ? { ...item, quantity: previousQty } : item,
+          item.id === itemId ? { ...item, gathered: previousValue } : item,
         ),
       })),
     }));

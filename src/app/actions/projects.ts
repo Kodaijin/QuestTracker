@@ -152,6 +152,9 @@ const createProjectSchema = z
       .startsWith('/icons/', 'icon path must start with /icons/')
       .nullable()
       .optional(),
+    objectives: z
+      .array(z.string().trim().min(1))
+      .min(1, 'At least one objective is required'),
   })
   .merge(recurrenceSchema);
 
@@ -171,23 +174,14 @@ const createObjectiveSchema = z.object({
 const createInventoryItemSchema = z.object({
   projectId: z.string().min(1, 'projectId is required'),
   name: z.string().min(1, 'Name is required'),
-  quantity: z
-    .number()
-    .int('Quantity must be an integer')
-    .min(0, 'Quantity must be 0 or more')
-    .optional(),
 });
 
 const toggleObjectiveSchema = z.object({
   objectiveId: z.string().min(1, 'objectiveId is required'),
 });
 
-const updateInventoryQuantitySchema = z.object({
+const toggleInventoryItemSchema = z.object({
   itemId: z.string().min(1, 'itemId is required'),
-  quantity: z
-    .number()
-    .int('Quantity must be an integer')
-    .min(0, 'Quantity must be 0 or more'),
 });
 
 // ── Shared return type for getProjectsForUser ──────────────────────────────────
@@ -208,7 +202,7 @@ export async function createProject(
     throw new Error(parsed.error.issues[0]?.message ?? 'Invalid input');
   }
 
-  const { title, description, icon, ...recInput } = parsed.data;
+  const { title, description, icon, objectives, ...recInput } = parsed.data;
   const recFields = normaliseRecurrence(recInput);
 
   return prisma.project.create({
@@ -223,6 +217,13 @@ export async function createProject(
       dayOfMonth: recFields.dayOfMonth,
       specificDate: recFields.specificDate,
       dueDate: recFields.dueDate,
+      objectives: {
+        create: objectives.map((objTitle, index) => ({
+          title: objTitle,
+          order: index + 1,
+          isCompleted: false,
+        })),
+      },
     },
   });
 }
@@ -270,7 +271,7 @@ export async function createInventoryItem(
     throw new Error(parsed.error.issues[0]?.message ?? 'Invalid input');
   }
 
-  const { projectId, name, quantity } = parsed.data;
+  const { projectId, name } = parsed.data;
 
   const project = await prisma.project.findUnique({
     where: { id: projectId },
@@ -281,7 +282,7 @@ export async function createInventoryItem(
   if (project.userId !== userId) throw new Error('Unauthorized');
 
   return prisma.inventoryItem.create({
-    data: { projectId, name, quantity: quantity ?? 0 },
+    data: { projectId, name, gathered: false },
   });
 }
 
@@ -336,17 +337,17 @@ export async function toggleObjective(
   return updated;
 }
 
-export async function updateInventoryQuantity(
-  input: z.infer<typeof updateInventoryQuantitySchema>,
+export async function toggleInventoryItem(
+  input: z.infer<typeof toggleInventoryItemSchema>,
 ): Promise<InventoryItem> {
   const userId = await requireUserId();
 
-  const parsed = updateInventoryQuantitySchema.safeParse(input);
+  const parsed = toggleInventoryItemSchema.safeParse(input);
   if (!parsed.success) {
     throw new Error(parsed.error.issues[0]?.message ?? 'Invalid input');
   }
 
-  const { itemId, quantity } = parsed.data;
+  const { itemId } = parsed.data;
 
   const item = await prisma.inventoryItem.findUnique({
     where: { id: itemId },
@@ -358,7 +359,7 @@ export async function updateInventoryQuantity(
 
   return prisma.inventoryItem.update({
     where: { id: itemId },
-    data: { quantity },
+    data: { gathered: !item.gathered },
   });
 }
 

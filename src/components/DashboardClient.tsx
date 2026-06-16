@@ -56,6 +56,7 @@ export default function DashboardClient({ initialProjects }: Props) {
   const [showForm, setShowForm] = useState(false);
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
+  const [objectives, setObjectives] = useState<string[]>(['']);
   const [icon, setIcon] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
@@ -86,6 +87,7 @@ export default function DashboardClient({ initialProjects }: Props) {
   function resetForm() {
     setTitle('');
     setDescription('');
+    setObjectives(['']);
     setIcon(null);
     setError(null);
     setShowForm(false);
@@ -106,6 +108,12 @@ export default function DashboardClient({ initialProjects }: Props) {
       return;
     }
 
+    const trimmedObjectives = objectives.map((o) => o.trim()).filter(Boolean);
+    if (trimmedObjectives.length === 0) {
+      setError('Add at least one objective');
+      return;
+    }
+
     if (recurrenceType === RecurrenceType.SPECIFIC_DATE && !specificDate) {
       setError('Please choose a specific date for the recurrence');
       return;
@@ -118,6 +126,7 @@ export default function DashboardClient({ initialProjects }: Props) {
         await createProject({
           title: trimmedTitle,
           description: description.trim() || undefined,
+          objectives: trimmedObjectives,
           icon: icon ?? undefined,
           ...recurrencePayload,
         });
@@ -127,6 +136,20 @@ export default function DashboardClient({ initialProjects }: Props) {
         setError(err instanceof Error ? err.message : 'Failed to create quest');
       }
     });
+  }
+
+  function updateObjective(index: number, value: string) {
+    setObjectives((prev) => prev.map((o, i) => (i === index ? value : o)));
+  }
+
+  function addObjectiveField() {
+    setObjectives((prev) => [...prev, '']);
+  }
+
+  function removeObjectiveField(index: number) {
+    setObjectives((prev) =>
+      prev.length === 1 ? prev : prev.filter((_, i) => i !== index),
+    );
   }
 
   function buildRecurrencePayload() {
@@ -272,6 +295,12 @@ export default function DashboardClient({ initialProjects }: Props) {
             <Button onClick={() => setShowForm(true)}>+ New Quest</Button>
           )}
           <Link
+            href="/achievements"
+            className="inline-flex items-center rounded-lg border border-zinc-700 bg-zinc-800/60 hover:bg-zinc-700/70 text-zinc-300 hover:text-zinc-100 text-sm font-medium px-3 py-1.5 transition-all"
+          >
+            🏆 Achievements
+          </Link>
+          <Link
             href="/settings"
             className="inline-flex items-center rounded-lg border border-zinc-700 bg-zinc-800/60 hover:bg-zinc-700/70 text-zinc-300 hover:text-zinc-100 text-sm font-medium px-3 py-1.5 transition-all"
           >
@@ -334,6 +363,45 @@ export default function DashboardClient({ initialProjects }: Props) {
                   className="field resize-none"
                   placeholder="What does success look like?"
                 />
+              </div>
+
+              {/* Objectives (at least one required) */}
+              <div>
+                <label className="block text-sm font-medium text-zinc-300 mb-1.5">
+                  Objectives <span className="text-zinc-500">(at least one)</span>
+                </label>
+                <div className="space-y-2">
+                  {objectives.map((obj, index) => (
+                    <div key={index} className="flex gap-2">
+                      <input
+                        type="text"
+                        value={obj}
+                        onChange={(e) => updateObjective(index, e.target.value)}
+                        className="field flex-1"
+                        placeholder={`Objective ${index + 1}`}
+                      />
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => removeObjectiveField(index)}
+                        disabled={objectives.length === 1}
+                        aria-label={`Remove objective ${index + 1}`}
+                      >
+                        ✕
+                      </Button>
+                    </div>
+                  ))}
+                </div>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  onClick={addObjectiveField}
+                  className="mt-2"
+                >
+                  + Add objective
+                </Button>
               </div>
 
               {/* Icon picker */}

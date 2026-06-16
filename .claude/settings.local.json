@@ -28,7 +28,15 @@
       "Bash(findstr 5432)",
       "PowerShell(netstat *)",
       "Bash(git init *)",
-      "Bash(git add *)"
+      "Bash(git add *)",
+      "Bash(grep -E \"^\\\\.env$|^\\\\.next/|^node_modules/\")",
+      "Bash(git commit *)",
+      "Bash(git remote *)",
+      "Bash(git push *)",
+      "Bash(git config *)",
+      "Bash(gh auth *)",
+      "Bash(gh api *)",
+      "PowerShell(git config *)"
     ]
   }
 }
