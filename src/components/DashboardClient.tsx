@@ -3,12 +3,13 @@
 import { useEffect, useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { RecurrenceType } from '@prisma/client';
+import { RecurrenceType, Difficulty } from '@prisma/client';
 import { useProjectStore } from '@/store/useProjectStore';
 import { createProject, deleteProject } from '@/app/actions/projects';
 import type { ProjectWithRelations } from '@/app/actions/projects';
 import { recurrenceLabel, isMissed } from '@/lib/recurrence';
 import { getQuestStatus, questProgress, type QuestStatus } from '@/lib/quest';
+import { difficultyMeta, DIFFICULTIES } from '@/lib/difficulty';
 import { Button } from '@/components/ui/button';
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
 import { Progress } from '@/components/ui/progress';
@@ -16,6 +17,7 @@ import { cn } from '@/lib/utils';
 import IconPicker from '@/components/IconPicker';
 import LogoutButton from '@/components/LogoutButton';
 import CountUp from '@/components/CountUp';
+import ProgressionHeader from '@/components/ProgressionHeader';
 
 interface Props {
   initialProjects: ProjectWithRelations[];
@@ -50,9 +52,17 @@ export default function DashboardClient({ initialProjects }: Props) {
   const [objectives, setObjectives] = useState<string[]>(['']);
   const [items, setItems] = useState<string[]>([]);
   const [icon, setIcon] = useState<string | null>(null);
+  const [difficulty, setDifficulty] = useState<Difficulty>(Difficulty.NORMAL);
+  const [tags, setTags] = useState<string[]>([]);
+  const [tagDraft, setTagDraft] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
-  const [showCompleted, setShowCompleted] = useState(true);
+  const [showCompleted, setShowCompleted] = useState(false);
+
+  // ── Search / filter state ─────────────────────────────────────────────────────
+  const [search, setSearch] = useState('');
+  const [filterDifficulty, setFilterDifficulty] = useState<Difficulty | 'all'>('all');
+  const [filterTag, setFilterTag] = useState<string | null>(null);
 
   // ── Epic state ──────────────────────────────────────────────────────────────
   const [isEpic, setIsEpic] = useState(false);
@@ -77,14 +87,39 @@ export default function DashboardClient({ initialProjects }: Props) {
   // epic progress can be resolved from its children.
   const topLevel = projects.filter((p) => p.parentId == null);
 
-  // ── Stats (mutually exclusive buckets) ────────────────────────────────────────
+  // ── Stats (mutually exclusive buckets; always reflect ALL quests) ─────────────
   const accepted = topLevel.filter((p) => getQuestStatus(p, projects) === 'accepted').length;
   const inProgress = topLevel.filter((p) => getQuestStatus(p, projects) === 'in-progress').length;
   const completed = topLevel.filter((p) => getQuestStatus(p, projects) === 'completed').length;
 
+  // ── Search / filter ───────────────────────────────────────────────────────────
+  const allTags = Array.from(new Set(topLevel.flatMap((p) => p.tags))).sort();
+  const query = search.trim().toLowerCase();
+  const filtersActive = query !== '' || filterDifficulty !== 'all' || filterTag != null;
+
+  function matchesFilters(p: ProjectWithRelations): boolean {
+    if (filterDifficulty !== 'all' && p.difficulty !== filterDifficulty) return false;
+    if (filterTag != null && !p.tags.includes(filterTag)) return false;
+    if (query) {
+      const haystack = [p.title, p.description ?? '', ...p.tags].join(' ').toLowerCase();
+      if (!haystack.includes(query)) return false;
+    }
+    return true;
+  }
+
+  const visible = topLevel.filter(matchesFilters);
+
   // ── Partitioned quest lists ───────────────────────────────────────────────────
-  const activeProjects = topLevel.filter((p) => getQuestStatus(p, projects) !== 'completed');
-  const completedProjects = topLevel.filter((p) => getQuestStatus(p, projects) === 'completed');
+  // Recurring quests are listed first among active ones (stable sort preserves
+  // the original order within each group).
+  const activeProjects = visible
+    .filter((p) => getQuestStatus(p, projects) !== 'completed')
+    .sort((a, b) => {
+      const aRecurring = a.recurrenceType !== RecurrenceType.NONE ? 0 : 1;
+      const bRecurring = b.recurrenceType !== RecurrenceType.NONE ? 0 : 1;
+      return aRecurring - bRecurring;
+    });
+  const completedProjects = visible.filter((p) => getQuestStatus(p, projects) === 'completed');
 
   function resetForm() {
     setTitle('');
@@ -92,6 +127,9 @@ export default function DashboardClient({ initialProjects }: Props) {
     setObjectives(['']);
     setItems([]);
     setIcon(null);
+    setDifficulty(Difficulty.NORMAL);
+    setTags([]);
+    setTagDraft('');
     setError(null);
     setShowForm(false);
     setIsEpic(false);
@@ -123,6 +161,8 @@ export default function DashboardClient({ initialProjects }: Props) {
             title: trimmedTitle,
             description: description.trim() || undefined,
             icon: icon ?? undefined,
+            difficulty,
+            tags,
             isEpic: true,
             sequential,
             subQuests: trimmedSubQuests,
@@ -158,6 +198,8 @@ export default function DashboardClient({ initialProjects }: Props) {
           objectives: trimmedObjectives,
           inventoryItems: items.map((i) => i.trim()).filter(Boolean),
           icon: icon ?? undefined,
+          difficulty,
+          tags,
           ...recurrencePayload,
         });
         resetForm();
@@ -194,6 +236,17 @@ export default function DashboardClient({ initialProjects }: Props) {
     setObjectives((prev) =>
       prev.length === 1 ? prev : prev.filter((_, i) => i !== index),
     );
+  }
+
+  function commitTag() {
+    const t = tagDraft.trim();
+    if (!t) return;
+    setTags((prev) => (prev.includes(t) ? prev : [...prev, t]));
+    setTagDraft('');
+  }
+
+  function removeTag(tag: string) {
+    setTags((prev) => prev.filter((t) => t !== tag));
   }
 
   function updateItem(index: number, value: string) {
@@ -260,6 +313,7 @@ export default function DashboardClient({ initialProjects }: Props) {
     const borderClass = missed
       ? 'border-red-500/50 group-hover:border-red-400/70'
       : statusCardStyles[status];
+    const diff = difficultyMeta(project.difficulty);
 
     return (
       <div
@@ -271,7 +325,7 @@ export default function DashboardClient({ initialProjects }: Props) {
           href={`/projects/${project.id}`}
           className="block rounded-xl focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 focus-visible:ring-offset-2 focus-visible:ring-offset-zinc-950"
         >
-          <Card className={cn('h-full transition-all duration-200 group-hover:shadow-glow group-hover:-translate-y-0.5', borderClass)}>
+          <Card className={cn('h-full transition-all duration-200 group-hover:shadow-glow group-hover:-translate-y-0.5', borderClass, status !== 'completed' && diff.cardAccent)}>
             <CardHeader>
               <CardTitle className={cn('transition-colors pr-6', status === 'completed' ? 'text-zinc-600 line-through' : 'group-hover:text-white')}>
                 <span className="flex items-center gap-2">
@@ -286,8 +340,11 @@ export default function DashboardClient({ initialProjects }: Props) {
                   {project.title}
                 </span>
               </CardTitle>
-              {(label || missed || project.isEpic) && (
-                <div className="flex flex-wrap gap-1.5 mt-1.5">
+              <div className="flex flex-wrap gap-1.5 mt-1.5">
+                  <span className={cn('inline-flex items-center gap-1 rounded-md px-2 py-0.5 text-xs font-medium', diff.badgeClass)}>
+                    <span aria-hidden>{diff.emoji}</span>
+                    {diff.label}
+                  </span>
                   {project.isEpic && (
                     <span className="inline-flex items-center rounded-md bg-amber-950/40 border border-amber-500/40 px-2 py-0.5 text-xs font-medium text-amber-300">
                       ⚔ Epic{project.sequential ? ' · in order' : ''}
@@ -303,8 +360,15 @@ export default function DashboardClient({ initialProjects }: Props) {
                       ⚠ Missed
                     </span>
                   )}
+                  {project.tags.map((t) => (
+                    <span
+                      key={t}
+                      className="inline-flex items-center rounded-md bg-indigo-950/30 border border-indigo-500/30 px-2 py-0.5 text-xs font-medium text-indigo-300"
+                    >
+                      #{t}
+                    </span>
+                  ))}
                 </div>
-              )}
               {project.description && (
                 <p className="mt-1 text-sm text-zinc-400 leading-snug line-clamp-2">
                   {project.description}
@@ -346,6 +410,9 @@ export default function DashboardClient({ initialProjects }: Props) {
 
   return (
     <main className="max-w-5xl mx-auto px-6 py-12">
+      <div className="mb-6">
+        <ProgressionHeader />
+      </div>
       <div className="flex items-end justify-between mb-6">
         <div>
           <h1 className="text-3xl font-bold tracking-tight text-zinc-50">
@@ -355,10 +422,28 @@ export default function DashboardClient({ initialProjects }: Props) {
             Track your objectives and loot, one quest at a time.
           </p>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center justify-end gap-2">
           {!showForm && (
             <Button onClick={() => setShowForm(true)}>+ New Quest</Button>
           )}
+          <Link
+            href="/today"
+            className="inline-flex items-center rounded-lg border border-zinc-700 bg-zinc-800/60 hover:bg-zinc-700/70 text-zinc-300 hover:text-zinc-100 text-sm font-medium px-3 py-1.5 transition-all"
+          >
+            ☀ Today
+          </Link>
+          <Link
+            href="/calendar"
+            className="inline-flex items-center rounded-lg border border-zinc-700 bg-zinc-800/60 hover:bg-zinc-700/70 text-zinc-300 hover:text-zinc-100 text-sm font-medium px-3 py-1.5 transition-all"
+          >
+            🗓 Calendar
+          </Link>
+          <Link
+            href="/insights"
+            className="inline-flex items-center rounded-lg border border-zinc-700 bg-zinc-800/60 hover:bg-zinc-700/70 text-zinc-300 hover:text-zinc-100 text-sm font-medium px-3 py-1.5 transition-all"
+          >
+            📊 Insights
+          </Link>
           <Link
             href="/achievements"
             className="inline-flex items-center rounded-lg border border-zinc-700 bg-zinc-800/60 hover:bg-zinc-700/70 text-zinc-300 hover:text-zinc-100 text-sm font-medium px-3 py-1.5 transition-all"
@@ -427,6 +512,74 @@ export default function DashboardClient({ initialProjects }: Props) {
                   rows={2}
                   className="field resize-none"
                   placeholder="What does success look like?"
+                />
+              </div>
+
+              {/* Difficulty (scales XP reward & card rarity) */}
+              <div>
+                <label className="block text-sm font-medium text-zinc-300 mb-1.5">
+                  Difficulty <span className="text-zinc-500">(more XP for harder quests)</span>
+                </label>
+                <div className="flex flex-wrap gap-2">
+                  {DIFFICULTIES.map((d) => (
+                    <button
+                      key={d.value}
+                      type="button"
+                      onClick={() => setDifficulty(d.value)}
+                      aria-pressed={difficulty === d.value}
+                      className={cn(
+                        'inline-flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-sm font-medium transition-all',
+                        difficulty === d.value
+                          ? 'border-amber-500/60 bg-amber-950/40 text-amber-200'
+                          : 'border-zinc-700 bg-zinc-800/50 text-zinc-400 hover:text-zinc-200',
+                      )}
+                    >
+                      <span aria-hidden>{d.emoji}</span>
+                      {d.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Tags */}
+              <div>
+                <label htmlFor="quest-tag" className="block text-sm font-medium text-zinc-300 mb-1.5">
+                  Tags <span className="text-zinc-500">(optional — for grouping & filtering)</span>
+                </label>
+                {tags.length > 0 && (
+                  <div className="flex flex-wrap gap-1.5 mb-2">
+                    {tags.map((t) => (
+                      <span
+                        key={t}
+                        className="inline-flex items-center gap-1 rounded-md bg-indigo-950/40 border border-indigo-500/40 px-2 py-0.5 text-xs font-medium text-indigo-200"
+                      >
+                        #{t}
+                        <button
+                          type="button"
+                          onClick={() => removeTag(t)}
+                          aria-label={`Remove tag ${t}`}
+                          className="text-indigo-400 hover:text-indigo-200"
+                        >
+                          ✕
+                        </button>
+                      </span>
+                    ))}
+                  </div>
+                )}
+                <input
+                  id="quest-tag"
+                  type="text"
+                  value={tagDraft}
+                  onChange={(e) => setTagDraft(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' || e.key === ',') {
+                      e.preventDefault();
+                      commitTag();
+                    }
+                  }}
+                  onBlur={commitTag}
+                  className="field"
+                  placeholder="Type a tag and press Enter"
                 />
               </div>
 
@@ -747,9 +900,78 @@ export default function DashboardClient({ initialProjects }: Props) {
         </Card>
       )}
 
+      {/* Search & filters */}
+      {topLevel.length > 0 && (
+        <div className="mb-6 space-y-3">
+          <input
+            type="search"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="Search quests by title, description, or tag…"
+            className="field"
+            aria-label="Search quests"
+          />
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="text-xs text-zinc-500 uppercase tracking-wide">Difficulty:</span>
+            <button
+              type="button"
+              onClick={() => setFilterDifficulty('all')}
+              className={cn(
+                'rounded-md border px-2 py-0.5 text-xs font-medium transition-all',
+                filterDifficulty === 'all'
+                  ? 'border-indigo-500/60 bg-indigo-950/40 text-indigo-200'
+                  : 'border-zinc-700 bg-zinc-800/50 text-zinc-400 hover:text-zinc-200',
+              )}
+            >
+              All
+            </button>
+            {DIFFICULTIES.map((d) => (
+              <button
+                key={d.value}
+                type="button"
+                onClick={() => setFilterDifficulty(d.value)}
+                className={cn(
+                  'inline-flex items-center gap-1 rounded-md border px-2 py-0.5 text-xs font-medium transition-all',
+                  filterDifficulty === d.value
+                    ? 'border-amber-500/60 bg-amber-950/40 text-amber-200'
+                    : 'border-zinc-700 bg-zinc-800/50 text-zinc-400 hover:text-zinc-200',
+                )}
+              >
+                <span aria-hidden>{d.emoji}</span>
+                {d.label}
+              </button>
+            ))}
+          </div>
+          {allTags.length > 0 && (
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="text-xs text-zinc-500 uppercase tracking-wide">Tags:</span>
+              {allTags.map((t) => (
+                <button
+                  key={t}
+                  type="button"
+                  onClick={() => setFilterTag((cur) => (cur === t ? null : t))}
+                  className={cn(
+                    'rounded-md border px-2 py-0.5 text-xs font-medium transition-all',
+                    filterTag === t
+                      ? 'border-indigo-500/60 bg-indigo-950/40 text-indigo-200'
+                      : 'border-zinc-700 bg-zinc-800/50 text-zinc-400 hover:text-zinc-200',
+                  )}
+                >
+                  #{t}
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
       {projects.length === 0 ? (
         <div className="rounded-xl border border-dashed border-zinc-800 bg-zinc-900/30 p-16 text-center text-zinc-500">
           No quests yet — create one to begin your adventure.
+        </div>
+      ) : visible.length === 0 && filtersActive ? (
+        <div className="rounded-xl border border-dashed border-zinc-800 bg-zinc-900/30 p-16 text-center text-zinc-500">
+          No quests match your filters.
         </div>
       ) : (
         <>

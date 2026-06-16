@@ -143,6 +143,40 @@ export function computeNextDueDate(cfg: RecurrenceConfig, currentDue: Date): Dat
 }
 
 /**
+ * Lists every occurrence (due date) of a recurring/scheduled quest that falls
+ * within [rangeStart, rangeEnd], inclusive — used to plot quests on a calendar.
+ *
+ * NONE quests have no occurrences. SPECIFIC_DATE yields its single date if in
+ * range. For EVERY_N_WEEKS the interval phase is approximated from rangeStart
+ * (the true phase is anchored at creation), which is fine for a visual grid.
+ */
+export function occurrencesInRange(
+  cfg: RecurrenceConfig,
+  rangeStart: Date,
+  rangeEnd: Date,
+): Date[] {
+  if (cfg.recurrenceType === RecurrenceType.NONE) return [];
+
+  if (cfg.recurrenceType === RecurrenceType.SPECIFIC_DATE) {
+    if (!cfg.specificDate) return [];
+    const d = endOfDay(cfg.specificDate);
+    return d >= rangeStart && d <= rangeEnd ? [d] : [];
+  }
+
+  const out: Date[] = [];
+  let due = computeFirstDueDate(cfg, rangeStart);
+  let guard = 0;
+  while (due != null && due <= rangeEnd && guard < 400) {
+    if (due >= rangeStart) out.push(due);
+    const next = computeNextDueDate(cfg, due);
+    if (next == null) break;
+    due = next;
+    guard += 1;
+  }
+  return out;
+}
+
+/**
  * Returns true when the quest has at least one objective and ALL are completed.
  */
 export function isCompletedThisCycle(quest: SchedulableQuest): boolean {

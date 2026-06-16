@@ -9,6 +9,7 @@ import {
   earnedKeys,
   type Achievement,
 } from '@/lib/achievements';
+import { computeStreak, dayKey } from '@/lib/progression';
 
 async function requireUserId(): Promise<string> {
   const session = await getServerSession(authOptions);
@@ -30,15 +31,22 @@ export type AchievementStatus = Omit<Achievement, 'check'> & {
 export async function getAchievements(): Promise<AchievementStatus[]> {
   const userId = await requireUserId();
 
-  const [projects, existing] = await Promise.all([
+  const [projects, existing, events] = await Promise.all([
     prisma.project.findMany({
       where: { userId },
       include: { objectives: true, inventoryItems: true },
     }),
     prisma.unlockedAchievement.findMany({ where: { userId } }),
+    prisma.completionEvent.findMany({ where: { userId }, select: { createdAt: true } }),
   ]);
 
   const stats = computeStats(projects);
+  const streak = computeStreak(
+    events.map((e) => dayKey(e.createdAt)),
+    dayKey(new Date()),
+  );
+  stats.currentStreak = streak.current;
+  stats.longestStreak = streak.longest;
   const earned = new Set(earnedKeys(stats));
   const unlockedMap = new Map(existing.map((u) => [u.key, u.unlockedAt]));
 

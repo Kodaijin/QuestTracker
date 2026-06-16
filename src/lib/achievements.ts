@@ -33,6 +33,10 @@ export type QuestStats = {
   epicsCreated: number;
   epicsCompleted: number;
   maxSubQuests: number;
+  // Streak stats are derived from the CompletionEvent log (not from projects),
+  // so computeStats defaults them to 0 — the caller fills them in.
+  currentStreak: number;
+  longestStreak: number;
 };
 
 export type Achievement = {
@@ -69,6 +73,8 @@ export function computeStats(projects: ProjectWithRelations[]): QuestStats {
     epicsCreated: 0,
     epicsCompleted: 0,
     maxSubQuests: 0,
+    currentStreak: 0,
+    longestStreak: 0,
   };
 
   for (const p of projects) {
@@ -202,6 +208,12 @@ export const ACHIEVEMENTS: Achievement[] = [
   { key: 'first-epic', name: 'Epic Undertaking', icon: '⚔️', description: 'Create your first Epic Quest.', check: (s) => s.epicsCreated >= 1 },
   { key: 'saga', name: 'Saga', icon: '📖', description: 'Build an Epic with 5+ sub-quests.', check: (s) => s.maxSubQuests >= 5 },
   { key: 'epic-win', name: 'Epic Win', icon: '🐲', description: 'Complete an entire Epic Quest.', check: (s) => s.epicsCompleted >= 1 },
+
+  // ── Streaks ──────────────────────────────────────────────────────────────────
+  { key: 'streak-3', name: 'Warming Up', icon: '🔥', description: 'Keep a 3-day completion streak.', check: (s) => s.longestStreak >= 3 },
+  { key: 'streak-7', name: 'On Fire', icon: '🔥', description: 'Keep a 7-day completion streak.', check: (s) => s.longestStreak >= 7 },
+  { key: 'streak-14', name: 'Unstoppable', icon: '⚡', description: 'Keep a 14-day completion streak.', check: (s) => s.longestStreak >= 14 },
+  { key: 'streak-30', name: 'Force Of Nature', icon: '🌋', description: 'Keep a 30-day completion streak.', check: (s) => s.longestStreak >= 30 },
 ];
 
 /** Returns the keys of every achievement currently satisfied by the stats. */

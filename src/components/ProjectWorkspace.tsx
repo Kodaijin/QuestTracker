@@ -3,7 +3,7 @@
 import { useEffect, useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { RecurrenceType } from '@prisma/client';
+import { RecurrenceType, Difficulty } from '@prisma/client';
 import { useProjectStore } from '@/store/useProjectStore';
 import {
   toggleObjective,
@@ -19,6 +19,8 @@ import {
   createSubQuest,
   reorderSubQuest,
   updateEpicSettings,
+  setDifficulty,
+  setTags,
   deleteProject,
 } from '@/app/actions/projects';
 import type { ProjectWithRelations } from '@/app/actions/projects';
@@ -30,6 +32,7 @@ import {
   lockedSubQuestIds,
   isSubQuestLocked,
 } from '@/lib/quest';
+import { difficultyMeta, DIFFICULTIES } from '@/lib/difficulty';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Button } from '@/components/ui/button';
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
@@ -37,6 +40,7 @@ import { Progress } from '@/components/ui/progress';
 import { cn } from '@/lib/utils';
 import IconPicker from '@/components/IconPicker';
 import LogoutButton from '@/components/LogoutButton';
+import ProgressionHeader from '@/components/ProgressionHeader';
 import { SparkleBurst, QuestCompleteEffect } from '@/components/QuestEffects';
 
 interface Props {
@@ -131,6 +135,11 @@ export default function ProjectWorkspace({ initialProjects, projectId }: Props) 
   // celebration. Both carry a nonce so remounting restarts the CSS animation.
   const [celebrate, setCelebrate] = useState<{ objId: string; nonce: number } | null>(null);
   const [questDone, setQuestDone] = useState<number | null>(null);
+  // Bumped after any XP-affecting toggle so the ProgressionHeader re-fetches.
+  const [progressionNonce, setProgressionNonce] = useState(0);
+  const [isSavingDifficulty, startSaveDifficulty] = useTransition();
+  const [tagDraft, setTagDraft] = useState('');
+  const [isSavingTags, startSaveTags] = useTransition();
 
   // ── Sub-quest (epic) management state ───────────────────────────────────────────
   const [newSubQuestTitle, setNewSubQuestTitle] = useState('');
@@ -216,6 +225,7 @@ export default function ProjectWorkspace({ initialProjects, projectId }: Props) 
 
     try {
       await toggleObjective({ objectiveId });
+      setProgressionNonce((n) => n + 1); // XP changed — refresh the header
     } catch {
       rollbackObjective(objectiveId, prev);
     }
@@ -225,9 +235,49 @@ export default function ProjectWorkspace({ initialProjects, projectId }: Props) 
     const prev = optimisticToggleItem(itemId);
     try {
       await toggleInventoryItem({ itemId });
+      setProgressionNonce((n) => n + 1); // XP changed — refresh the header
     } catch {
       rollbackInventoryItem(itemId, prev);
     }
+  }
+
+  function handleSetDifficulty(next: Difficulty) {
+    if (next === project?.difficulty) return;
+    startSaveDifficulty(async () => {
+      try {
+        await setDifficulty({ projectId, difficulty: next });
+        router.refresh();
+      } catch {
+        /* best-effort; refresh will resync */
+      }
+    });
+  }
+
+  function persistTags(nextTags: string[]) {
+    startSaveTags(async () => {
+      try {
+        await setTags({ projectId, tags: nextTags });
+        router.refresh();
+      } catch {
+        /* best-effort; refresh will resync */
+      }
+    });
+  }
+
+  function handleAddTag() {
+    const t = tagDraft.trim();
+    if (!t || !project) return;
+    if (project.tags.includes(t)) {
+      setTagDraft('');
+      return;
+    }
+    persistTags([...project.tags, t]);
+    setTagDraft('');
+  }
+
+  function handleRemoveTag(tag: string) {
+    if (!project) return;
+    persistTags(project.tags.filter((t) => t !== tag));
   }
 
   // ── Handlers: add forms ───────────────────────────────────────────────────────
@@ -501,6 +551,7 @@ export default function ProjectWorkspace({ initialProjects, projectId }: Props) 
 
   return (
     <main className="max-w-3xl mx-auto px-6 py-12 space-y-8">
+      <ProgressionHeader refreshSignal={progressionNonce} />
       {/* Header */}
       <div className="relative">
         {questDone != null && <QuestCompleteEffect key={questDone} />}
@@ -628,6 +679,75 @@ export default function ProjectWorkspace({ initialProjects, projectId }: Props) 
             />
           </div>
           {iconError && <p className="mt-1 text-sm text-red-400">{iconError}</p>}
+        </div>
+
+        {/* Difficulty (scales quest-completion XP & card rarity) */}
+        <div className="mt-4">
+          <label className="block text-xs font-medium text-zinc-500 uppercase tracking-wide mb-1.5">
+            Difficulty
+          </label>
+          <div className="flex flex-wrap gap-2">
+            {DIFFICULTIES.map((d) => (
+              <button
+                key={d.value}
+                type="button"
+                onClick={() => handleSetDifficulty(d.value)}
+                disabled={isSavingDifficulty}
+                aria-pressed={project.difficulty === d.value}
+                className={cn(
+                  'inline-flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-sm font-medium transition-all disabled:opacity-60',
+                  project.difficulty === d.value
+                    ? 'border-amber-500/60 bg-amber-950/40 text-amber-200'
+                    : 'border-zinc-700 bg-zinc-800/50 text-zinc-400 hover:text-zinc-200',
+                )}
+              >
+                <span aria-hidden>{d.emoji}</span>
+                {d.label}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* Tags */}
+        <div className="mt-4">
+          <label htmlFor="ws-tag" className="block text-xs font-medium text-zinc-500 uppercase tracking-wide mb-1.5">
+            Tags
+          </label>
+          <div className="flex flex-wrap items-center gap-1.5">
+            {project.tags.map((t) => (
+              <span
+                key={t}
+                className="inline-flex items-center gap-1 rounded-md bg-indigo-950/40 border border-indigo-500/40 px-2 py-0.5 text-xs font-medium text-indigo-200"
+              >
+                #{t}
+                <button
+                  type="button"
+                  onClick={() => handleRemoveTag(t)}
+                  disabled={isSavingTags}
+                  aria-label={`Remove tag ${t}`}
+                  className="text-indigo-400 hover:text-indigo-200 disabled:opacity-50"
+                >
+                  ✕
+                </button>
+              </span>
+            ))}
+            <input
+              id="ws-tag"
+              type="text"
+              value={tagDraft}
+              onChange={(e) => setTagDraft(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' || e.key === ',') {
+                  e.preventDefault();
+                  handleAddTag();
+                }
+              }}
+              onBlur={handleAddTag}
+              disabled={isSavingTags}
+              placeholder="+ tag"
+              className="field max-w-[8rem] py-1 text-sm"
+            />
+          </div>
         </div>
 
         <div className="mt-5 space-y-1.5">

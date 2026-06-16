@@ -3,7 +3,7 @@
 import { getServerSession } from 'next-auth';
 import { z } from 'zod';
 import type { Project, Objective, InventoryItem } from '@prisma/client';
-import { Prisma, RecurrenceType } from '@prisma/client';
+import { Prisma, RecurrenceType, CompletionType, Difficulty } from '@prisma/client';
 import { authOptions } from '@/lib/auth';
 import { prisma } from '@/lib/prisma';
 import {
@@ -12,6 +12,36 @@ import {
   isCompletedThisCycle,
   type SchedulableQuest,
 } from '@/lib/recurrence';
+import { objectiveXp, itemXp, questXp } from '@/lib/progression';
+
+// ── XP / completion-event helpers ────────────────────────────────────────────
+//
+// Every check-off writes a CompletionEvent (the source of truth for XP, streaks
+// and insights). Un-checking removes the most recent matching event so XP can't
+// be farmed by toggling. Recurrence rollover (syncRecurringQuests) deliberately
+// does NOT remove events — that's what lets dailies accrue XP and streaks.
+
+async function recordCompletionEvent(
+  userId: string,
+  type: CompletionType,
+  projectId: string,
+  xp: number,
+): Promise<void> {
+  await prisma.completionEvent.create({ data: { userId, type, projectId, xp } });
+}
+
+async function removeLatestCompletionEvent(
+  userId: string,
+  type: CompletionType,
+  projectId: string,
+): Promise<void> {
+  const latest = await prisma.completionEvent.findFirst({
+    where: { userId, type, projectId },
+    orderBy: { createdAt: 'desc' },
+    select: { id: true },
+  });
+  if (latest) await prisma.completionEvent.delete({ where: { id: latest.id } });
+}
 
 // ── Session guard ──────────────────────────────────────────────────────────────
 
@@ -183,6 +213,11 @@ const createProjectSchema = z
       .startsWith('/icons/', 'icon path must start with /icons/')
       .nullable()
       .optional(),
+    difficulty: z.nativeEnum(Difficulty).optional().default(Difficulty.NORMAL),
+    tags: z
+      .array(z.string().trim().min(1))
+      .optional()
+      .default([]),
     objectives: z
       .array(z.string().trim().min(1))
       .optional()
@@ -199,6 +234,16 @@ const createProjectSchema = z
       .default([]),
   })
   .merge(recurrenceSchema);
+
+const setDifficultySchema = z.object({
+  projectId: z.string().min(1, 'projectId is required'),
+  difficulty: z.nativeEnum(Difficulty),
+});
+
+const setTagsSchema = z.object({
+  projectId: z.string().min(1, 'projectId is required'),
+  tags: z.array(z.string().trim().min(1)).max(20),
+});
 
 const updateProjectIconSchema = z.object({
   projectId: z.string().min(1, 'projectId is required'),
@@ -263,6 +308,8 @@ export async function createProject(
     title,
     description,
     icon,
+    difficulty,
+    tags,
     objectives,
     inventoryItems,
     isEpic,
@@ -270,6 +317,8 @@ export async function createProject(
     subQuests,
     ...recInput
   } = parsed.data;
+
+  const cleanTags = Array.from(new Set(tags.map((t) => t.trim()).filter(Boolean)));
 
   // Epic quests are non-recurring containers; their content is sub-quests, which
   // are created as child projects (each a full quest fleshed out later).
@@ -279,6 +328,8 @@ export async function createProject(
         title,
         description: description ?? null,
         icon: icon ?? null,
+        difficulty,
+        tags: cleanTags,
         userId,
         isEpic: true,
         sequential,
@@ -306,6 +357,8 @@ export async function createProject(
       title,
       description: description ?? null,
       icon: icon ?? null,
+      difficulty,
+      tags: cleanTags,
       userId,
       recurrenceType: recFields.recurrenceType,
       dayOfWeek: recFields.dayOfWeek,
@@ -510,6 +563,7 @@ export async function toggleObjective(
           userId: true,
           id: true,
           parentId: true,
+          difficulty: true,
         },
       },
     },
@@ -527,24 +581,44 @@ export async function toggleObjective(
     throw new Error('This sub-quest is locked until earlier sub-quests are complete');
   }
 
+  const projectId = objective.project.id;
   const updated = await prisma.objective.update({
     where: { id: objectiveId },
     data: { isCompleted: !objective.isCompleted },
   });
 
-  // When toggling results in all objectives completed, set lastCompletedAt on the project.
-  // We only set it (never clear it) — leaving the historical value if it becomes incomplete again.
+  // Recompute completion state to detect quest-level transitions and award XP.
+  const sibs = await prisma.objective.findMany({
+    where: { projectId },
+    select: { id: true, isCompleted: true },
+  });
+  const nowComplete = sibs.length > 0 && sibs.every((o) => o.isCompleted);
+  // Whether the quest was complete *before* this toggle: only possible when
+  // un-checking, and only if every other objective was already done.
+  const wasComplete =
+    !updated.isCompleted && sibs.filter((o) => o.id !== objectiveId).every((o) => o.isCompleted);
+
   if (updated.isCompleted) {
-    const sibs = await prisma.objective.findMany({
-      where: { projectId: objective.project.id },
-      select: { isCompleted: true },
-    });
-    const allDone = sibs.length > 0 && sibs.every((o) => o.isCompleted);
-    if (allDone) {
+    await recordCompletionEvent(userId, CompletionType.OBJECTIVE, projectId, objectiveXp());
+    // Quest just became complete → award the (difficulty-scaled) quest bonus.
+    if (nowComplete) {
+      await recordCompletionEvent(
+        userId,
+        CompletionType.QUEST,
+        projectId,
+        questXp(objective.project.difficulty),
+      );
+      // Record the completion timestamp (set, never cleared).
       await prisma.project.update({
-        where: { id: objective.project.id },
+        where: { id: projectId },
         data: { lastCompletedAt: new Date() },
       });
+    }
+  } else {
+    await removeLatestCompletionEvent(userId, CompletionType.OBJECTIVE, projectId);
+    // Quest dropped out of completion → claw back the most recent quest bonus.
+    if (wasComplete) {
+      await removeLatestCompletionEvent(userId, CompletionType.QUEST, projectId);
     }
   }
 
@@ -571,10 +645,18 @@ export async function toggleInventoryItem(
   if (!item) throw new Error('Item not found');
   if (item.project.userId !== userId) throw new Error('Unauthorized');
 
-  return prisma.inventoryItem.update({
+  const updated = await prisma.inventoryItem.update({
     where: { id: itemId },
     data: { gathered: !item.gathered },
   });
+
+  if (updated.gathered) {
+    await recordCompletionEvent(userId, CompletionType.ITEM, item.projectId, itemXp());
+  } else {
+    await removeLatestCompletionEvent(userId, CompletionType.ITEM, item.projectId);
+  }
+
+  return updated;
 }
 
 export async function updateProject(
@@ -726,6 +808,57 @@ export async function deleteProject(
   if (project.userId !== userId) throw new Error('Unauthorized');
 
   await prisma.project.delete({ where: { id: projectId } });
+}
+
+export async function setDifficulty(
+  input: z.infer<typeof setDifficultySchema>,
+): Promise<Project> {
+  const userId = await requireUserId();
+
+  const parsed = setDifficultySchema.safeParse(input);
+  if (!parsed.success) {
+    throw new Error(parsed.error.issues[0]?.message ?? 'Invalid input');
+  }
+
+  const { projectId, difficulty } = parsed.data;
+
+  const project = await prisma.project.findUnique({
+    where: { id: projectId },
+    select: { userId: true },
+  });
+  if (!project) throw new Error('Project not found');
+  if (project.userId !== userId) throw new Error('Unauthorized');
+
+  return prisma.project.update({
+    where: { id: projectId },
+    data: { difficulty },
+  });
+}
+
+export async function setTags(
+  input: z.infer<typeof setTagsSchema>,
+): Promise<Project> {
+  const userId = await requireUserId();
+
+  const parsed = setTagsSchema.safeParse(input);
+  if (!parsed.success) {
+    throw new Error(parsed.error.issues[0]?.message ?? 'Invalid input');
+  }
+
+  const { projectId, tags } = parsed.data;
+  const cleanTags = Array.from(new Set(tags.map((t) => t.trim()).filter(Boolean)));
+
+  const project = await prisma.project.findUnique({
+    where: { id: projectId },
+    select: { userId: true },
+  });
+  if (!project) throw new Error('Project not found');
+  if (project.userId !== userId) throw new Error('Unauthorized');
+
+  return prisma.project.update({
+    where: { id: projectId },
+    data: { tags: cleanTags },
+  });
 }
 
 export async function updateProjectIcon(input: {

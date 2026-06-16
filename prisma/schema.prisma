@@ -17,6 +17,20 @@ enum RecurrenceType {
   SPECIFIC_DATE
 }
 
+enum Difficulty {
+  TRIVIAL
+  EASY
+  NORMAL
+  HARD
+  LEGENDARY
+}
+
+enum CompletionType {
+  OBJECTIVE
+  QUEST
+  ITEM
+}
+
 model User {
   id                   String                 @id @default(cuid())
   email                String                 @unique
@@ -27,6 +41,7 @@ model User {
   securityAnswerHash   String?
   projects             Project[]
   achievements         UnlockedAchievement[]
+  completionEvents     CompletionEvent[]
 }
 
 model Project {
@@ -44,6 +59,8 @@ model Project {
   dueDate         DateTime?
   lastCompletedAt DateTime?
   icon            String?
+  difficulty      Difficulty     @default(NORMAL)
+  tags            String[]       @default([])
   isEpic          Boolean        @default(false)
   sequential      Boolean        @default(false)
   parentId        String?
@@ -77,6 +94,18 @@ model InventoryItem {
   project   Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
 
   @@index([projectId])
+}
+
+model CompletionEvent {
+  id        String         @id @default(cuid())
+  userId    String
+  type      CompletionType
+  projectId String?
+  xp        Int
+  createdAt DateTime       @default(now())
+  user      User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, createdAt])
 }
 
 model UnlockedAchievement {
