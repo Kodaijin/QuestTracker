@@ -102,4 +102,5 @@ See `.env.example` for a complete template.
 
 ## License
 
-This project is private and not currently licensed for redistribution.
+GNU AFFERO GENERAL PUBLIC LICENSE
+                       Version 3
