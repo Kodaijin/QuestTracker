@@ -58,6 +58,8 @@ model Project {
   specificDate    DateTime?
   dueDate         DateTime?
   lastCompletedAt DateTime?
+  availableAt     DateTime?
+  deadline        DateTime?
   icon            String?
   difficulty      Difficulty     @default(NORMAL)
   tags            String[]       @default([])

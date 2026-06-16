@@ -65,6 +65,17 @@ export default function CalendarClient({ initialProjects }: Props) {
         map.set(key, arr);
       }
     }
+
+    // Plot finish-by deadlines (any quest, recurring or not).
+    for (const p of initialProjects) {
+      if (p.parentId != null || !p.deadline) continue;
+      const dd = new Date(p.deadline);
+      if (dd < rangeStart || dd > rangeEnd) continue;
+      const key = dayKey(dd);
+      const arr = map.get(key) ?? [];
+      if (!arr.some((q) => q.id === p.id)) arr.push(p);
+      map.set(key, arr);
+    }
     return map;
   }, [initialProjects, gridStart, gridDays]);
 
@@ -135,20 +146,30 @@ export default function CalendarClient({ initialProjects }: Props) {
             <div
               key={key}
               className={cn(
-                'min-h-[5.5rem] bg-zinc-950/80 px-1.5 py-1.5 flex flex-col gap-1',
+                'group relative min-h-[5.5rem] bg-zinc-950/80 px-1.5 py-1.5 flex flex-col gap-1',
                 !inMonth && 'opacity-40',
               )}
             >
-              <span
-                className={cn(
-                  'text-xs tabular-nums self-end',
-                  isToday
-                    ? 'flex h-5 w-5 items-center justify-center rounded-full bg-amber-500 font-bold text-zinc-950'
-                    : 'text-zinc-500',
-                )}
-              >
-                {d.getDate()}
-              </span>
+              <div className="flex items-center justify-between">
+                <Link
+                  href={`/?new=1&deadline=${key}`}
+                  aria-label={`Add a quest due ${key}`}
+                  title="Add a quest due this day"
+                  className="opacity-0 group-hover:opacity-100 transition-opacity text-zinc-500 hover:text-indigo-400 text-sm leading-none px-1"
+                >
+                  +
+                </Link>
+                <span
+                  className={cn(
+                    'text-xs tabular-nums',
+                    isToday
+                      ? 'flex h-5 w-5 items-center justify-center rounded-full bg-amber-500 font-bold text-zinc-950'
+                      : 'text-zinc-500',
+                  )}
+                >
+                  {d.getDate()}
+                </span>
+              </div>
               <div className="flex flex-col gap-0.5 overflow-hidden">
                 {quests.slice(0, 3).map((q) => {
                   const diff = difficultyMeta(q.difficulty);

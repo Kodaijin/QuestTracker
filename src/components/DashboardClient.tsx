@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState, useTransition } from 'react';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import { RecurrenceType, Difficulty } from '@prisma/client';
 import { useProjectStore } from '@/store/useProjectStore';
@@ -10,6 +10,7 @@ import type { ProjectWithRelations } from '@/app/actions/projects';
 import { recurrenceLabel, isMissed } from '@/lib/recurrence';
 import { getQuestStatus, questProgress, type QuestStatus } from '@/lib/quest';
 import { difficultyMeta, DIFFICULTIES } from '@/lib/difficulty';
+import { isUpcoming, deadlineCountdown, formatActivatesIn } from '@/lib/timing';
 import { Button } from '@/components/ui/button';
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
 import { Progress } from '@/components/ui/progress';
@@ -29,6 +30,17 @@ const statusCardStyles: Record<QuestStatus, string> = {
   completed: 'border-emerald-500/40 group-hover:border-emerald-400/70',
 };
 
+type AvailabilityPreset = 'now' | '1d' | '1w' | '2w' | '1m' | 'date';
+
+const AVAILABILITY_OPTIONS: { value: AvailabilityPreset; label: string }[] = [
+  { value: 'now', label: 'Now' },
+  { value: '1d', label: 'In 1 day' },
+  { value: '1w', label: 'In 1 week' },
+  { value: '2w', label: 'In 2 weeks' },
+  { value: '1m', label: 'In 1 month' },
+  { value: 'date', label: 'On a date…' },
+];
+
 const WEEKDAY_OPTIONS = [
   { label: 'Sunday', value: 0 },
   { label: 'Monday', value: 1 },
@@ -41,6 +53,7 @@ const WEEKDAY_OPTIONS = [
 
 export default function DashboardClient({ initialProjects }: Props) {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const hydrate = useProjectStore((s) => s.hydrate);
   const storeProjects = useProjectStore((s) => s.projects);
   const optimisticDeleteProj = useProjectStore((s) => s.optimisticDeleteProject);
@@ -55,9 +68,13 @@ export default function DashboardClient({ initialProjects }: Props) {
   const [difficulty, setDifficulty] = useState<Difficulty>(Difficulty.NORMAL);
   const [tags, setTags] = useState<string[]>([]);
   const [tagDraft, setTagDraft] = useState('');
+  const [availability, setAvailability] = useState<AvailabilityPreset>('now');
+  const [availableDate, setAvailableDate] = useState<string>('');
+  const [deadline, setDeadline] = useState<string>('');
   const [error, setError] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
   const [showCompleted, setShowCompleted] = useState(false);
+  const [showUpcoming, setShowUpcoming] = useState(true);
 
   // ── Search / filter state ─────────────────────────────────────────────────────
   const [search, setSearch] = useState('');
@@ -79,6 +96,14 @@ export default function DashboardClient({ initialProjects }: Props) {
   useEffect(() => {
     hydrate(initialProjects);
   }, [hydrate, initialProjects]);
+
+  // Calendar "click a date to add a quest" deep-link: ?new=1&deadline=YYYY-MM-DD
+  useEffect(() => {
+    if (searchParams.get('new') == null) return;
+    setShowForm(true);
+    const d = searchParams.get('deadline');
+    if (d) setDeadline(d);
+  }, [searchParams]);
 
   const projects = storeProjects.length > 0 ? storeProjects : initialProjects;
 
@@ -108,12 +133,19 @@ export default function DashboardClient({ initialProjects }: Props) {
   }
 
   const visible = topLevel.filter(matchesFilters);
+  const now = new Date();
 
   // ── Partitioned quest lists ───────────────────────────────────────────────────
+  // Upcoming quests (availableAt in the future) are held out of the active board
+  // and shown in their own section, sorted by when they activate.
+  const notCompleted = visible.filter((p) => getQuestStatus(p, projects) !== 'completed');
+  const upcomingProjects = notCompleted
+    .filter((p) => isUpcoming(p.availableAt, now))
+    .sort((a, b) => new Date(a.availableAt!).getTime() - new Date(b.availableAt!).getTime());
   // Recurring quests are listed first among active ones (stable sort preserves
   // the original order within each group).
-  const activeProjects = visible
-    .filter((p) => getQuestStatus(p, projects) !== 'completed')
+  const activeProjects = notCompleted
+    .filter((p) => !isUpcoming(p.availableAt, now))
     .sort((a, b) => {
       const aRecurring = a.recurrenceType !== RecurrenceType.NONE ? 0 : 1;
       const bRecurring = b.recurrenceType !== RecurrenceType.NONE ? 0 : 1;
@@ -130,6 +162,9 @@ export default function DashboardClient({ initialProjects }: Props) {
     setDifficulty(Difficulty.NORMAL);
     setTags([]);
     setTagDraft('');
+    setAvailability('now');
+    setAvailableDate('');
+    setDeadline('');
     setError(null);
     setShowForm(false);
     setIsEpic(false);
@@ -200,6 +235,8 @@ export default function DashboardClient({ initialProjects }: Props) {
           icon: icon ?? undefined,
           difficulty,
           tags,
+          availableAt: buildAvailableAtISO(),
+          deadline: buildDeadlineISO(),
           ...recurrencePayload,
         });
         resetForm();
@@ -261,6 +298,25 @@ export default function DashboardClient({ initialProjects }: Props) {
     setItems((prev) => prev.filter((_, i) => i !== index));
   }
 
+  /** ISO timestamp for when the quest should enter the active log (or undefined = now). */
+  function buildAvailableAtISO(): string | undefined {
+    if (availability === 'now') return undefined;
+    if (availability === 'date') {
+      return availableDate ? new Date(`${availableDate}T00:00:00`).toISOString() : undefined;
+    }
+    const d = new Date();
+    d.setHours(0, 0, 0, 0);
+    if (availability === '1d') d.setDate(d.getDate() + 1);
+    else if (availability === '1w') d.setDate(d.getDate() + 7);
+    else if (availability === '2w') d.setDate(d.getDate() + 14);
+    else if (availability === '1m') d.setMonth(d.getMonth() + 1);
+    return d.toISOString();
+  }
+
+  function buildDeadlineISO(): string | undefined {
+    return deadline ? new Date(`${deadline}T23:59:59`).toISOString() : undefined;
+  }
+
   function buildRecurrencePayload() {
     switch (recurrenceType) {
       case RecurrenceType.NONE:
@@ -291,7 +347,7 @@ export default function DashboardClient({ initialProjects }: Props) {
     }
   }
 
-  function renderQuestCard(project: ProjectWithRelations, index = 0) {
+  function renderQuestCard(project: ProjectWithRelations, index = 0, upcoming = false) {
     const { done, total } = questProgress(project, projects);
     const pct = total > 0 ? Math.round((done / total) * 100) : 0;
     const status = getQuestStatus(project, projects);
@@ -302,15 +358,20 @@ export default function DashboardClient({ initialProjects }: Props) {
         dueDate: project.dueDate ? new Date(project.dueDate) : null,
         specificDate: project.specificDate ? new Date(project.specificDate) : null,
       },
-      new Date(),
+      now,
     );
     const label = recurrenceLabel({
       ...project,
       dueDate: project.dueDate ? new Date(project.dueDate) : null,
       specificDate: project.specificDate ? new Date(project.specificDate) : null,
     });
+    // Deadline countdown only matters once the quest is active (not upcoming).
+    const countdown = upcoming
+      ? null
+      : deadlineCountdown(project.deadline, now, status === 'completed');
+    const overdue = missed || countdown?.tone === 'overdue';
 
-    const borderClass = missed
+    const borderClass = overdue
       ? 'border-red-500/50 group-hover:border-red-400/70'
       : statusCardStyles[status];
     const diff = difficultyMeta(project.difficulty);
@@ -318,7 +379,7 @@ export default function DashboardClient({ initialProjects }: Props) {
     return (
       <div
         key={project.id}
-        className="animate-card-enter relative group"
+        className={cn('animate-card-enter relative group', upcoming && 'opacity-70')}
         style={{ animationDelay: `${Math.min(index, 12) * 60}ms` }}
       >
         <Link
@@ -358,6 +419,25 @@ export default function DashboardClient({ initialProjects }: Props) {
                   {missed && (
                     <span className="inline-flex items-center rounded-md bg-red-950/50 border border-red-500/40 px-2 py-0.5 text-xs font-medium text-red-300">
                       ⚠ Missed
+                    </span>
+                  )}
+                  {upcoming && project.availableAt && (
+                    <span className="inline-flex items-center rounded-md bg-zinc-800 border border-zinc-600/50 px-2 py-0.5 text-xs font-medium text-zinc-300">
+                      ◷ Activates {formatActivatesIn(project.availableAt, now)}
+                    </span>
+                  )}
+                  {countdown && (
+                    <span
+                      className={cn(
+                        'inline-flex items-center gap-1 rounded-md px-2 py-0.5 text-xs font-medium border',
+                        countdown.tone === 'overdue'
+                          ? 'bg-red-950/50 border-red-500/40 text-red-300'
+                          : countdown.tone === 'soon'
+                            ? 'bg-amber-950/40 border-amber-500/40 text-amber-300'
+                            : 'bg-zinc-800 border-zinc-600/50 text-zinc-300',
+                      )}
+                    >
+                      ⏳ {countdown.label}
                     </span>
                   )}
                   {project.tags.map((t) => (
@@ -751,6 +831,57 @@ export default function DashboardClient({ initialProjects }: Props) {
 
               {!isEpic && (
                 <>
+              {/* Show up in active log */}
+              <div>
+                <label className="block text-sm font-medium text-zinc-300 mb-1.5">
+                  Show up in my active log
+                </label>
+                <div className="flex flex-wrap gap-2">
+                  {AVAILABILITY_OPTIONS.map((opt) => (
+                    <button
+                      key={opt.value}
+                      type="button"
+                      onClick={() => setAvailability(opt.value)}
+                      aria-pressed={availability === opt.value}
+                      className={cn(
+                        'rounded-lg border px-3 py-1.5 text-sm font-medium transition-all',
+                        availability === opt.value
+                          ? 'border-indigo-500/60 bg-indigo-950/40 text-indigo-200'
+                          : 'border-zinc-700 bg-zinc-800/50 text-zinc-400 hover:text-zinc-200',
+                      )}
+                    >
+                      {opt.label}
+                    </button>
+                  ))}
+                </div>
+                {availability === 'date' && (
+                  <input
+                    type="date"
+                    value={availableDate}
+                    onChange={(e) => setAvailableDate(e.target.value)}
+                    className="field mt-2"
+                    aria-label="Date the quest becomes active"
+                  />
+                )}
+                <p className="mt-1.5 text-xs text-zinc-500">
+                  Future quests wait in your <span className="text-zinc-400">Upcoming</span> list until then.
+                </p>
+              </div>
+
+              {/* Finish-by deadline */}
+              <div>
+                <label htmlFor="quest-deadline" className="block text-sm font-medium text-zinc-300 mb-1.5">
+                  Finish by <span className="text-zinc-500">(optional — shows a countdown)</span>
+                </label>
+                <input
+                  id="quest-deadline"
+                  type="date"
+                  value={deadline}
+                  onChange={(e) => setDeadline(e.target.value)}
+                  className="field"
+                />
+              </div>
+
               {/* Repeat / Recurrence section */}
               <div>
                 <label
@@ -982,6 +1113,44 @@ export default function DashboardClient({ initialProjects }: Props) {
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
               {activeProjects.map((project, i) => renderQuestCard(project, i))}
             </div>
+          )}
+
+          {/* Upcoming quests section */}
+          {upcomingProjects.length > 0 && (
+            <>
+              <button
+                type="button"
+                onClick={() => setShowUpcoming((prev) => !prev)}
+                aria-expanded={showUpcoming}
+                className="w-full flex items-center gap-3 mt-10 mb-5 text-left group"
+              >
+                <svg
+                  xmlns="http://www.w3.org/2000/svg"
+                  viewBox="0 0 20 20"
+                  fill="currentColor"
+                  className={cn(
+                    'w-4 h-4 text-indigo-400/80 flex-shrink-0 transition-transform duration-200',
+                    showUpcoming ? 'rotate-90' : 'rotate-0',
+                  )}
+                >
+                  <path
+                    fillRule="evenodd"
+                    d="M7.21 14.77a.75.75 0 01.02-1.06L11.168 10 7.23 6.29a.75.75 0 111.04-1.08l4.5 4.25a.75.75 0 010 1.08l-4.5 4.25a.75.75 0 01-1.06-.02z"
+                    clipRule="evenodd"
+                  />
+                </svg>
+                <span className="text-sm font-medium text-indigo-400/80 whitespace-nowrap">
+                  ◷ Upcoming · {upcomingProjects.length}
+                </span>
+                <span className="flex-1 h-px bg-zinc-800" />
+              </button>
+
+              {showUpcoming && (
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
+                  {upcomingProjects.map((project, i) => renderQuestCard(project, i, true))}
+                </div>
+              )}
+            </>
           )}
 
           {/* Completed quests section */}

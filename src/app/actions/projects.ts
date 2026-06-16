@@ -218,6 +218,8 @@ const createProjectSchema = z
       .array(z.string().trim().min(1))
       .optional()
       .default([]),
+    availableAt: z.string().nullable().optional(), // ISO; null/absent = active now
+    deadline: z.string().nullable().optional(), // ISO finish-by date
     objectives: z
       .array(z.string().trim().min(1))
       .optional()
@@ -243,6 +245,12 @@ const setDifficultySchema = z.object({
 const setTagsSchema = z.object({
   projectId: z.string().min(1, 'projectId is required'),
   tags: z.array(z.string().trim().min(1)).max(20),
+});
+
+const setQuestTimingSchema = z.object({
+  projectId: z.string().min(1, 'projectId is required'),
+  availableAt: z.string().nullable(), // ISO; null = active now
+  deadline: z.string().nullable(), // ISO; null = no deadline
 });
 
 const updateProjectIconSchema = z.object({
@@ -310,6 +318,8 @@ export async function createProject(
     icon,
     difficulty,
     tags,
+    availableAt,
+    deadline,
     objectives,
     inventoryItems,
     isEpic,
@@ -319,6 +329,8 @@ export async function createProject(
   } = parsed.data;
 
   const cleanTags = Array.from(new Set(tags.map((t) => t.trim()).filter(Boolean)));
+  const availableAtDate = availableAt ? new Date(availableAt) : null;
+  const deadlineDate = deadline ? new Date(deadline) : null;
 
   // Epic quests are non-recurring containers; their content is sub-quests, which
   // are created as child projects (each a full quest fleshed out later).
@@ -359,6 +371,8 @@ export async function createProject(
       icon: icon ?? null,
       difficulty,
       tags: cleanTags,
+      availableAt: availableAtDate,
+      deadline: deadlineDate,
       userId,
       recurrenceType: recFields.recurrenceType,
       dayOfWeek: recFields.dayOfWeek,
@@ -858,6 +872,34 @@ export async function setTags(
   return prisma.project.update({
     where: { id: projectId },
     data: { tags: cleanTags },
+  });
+}
+
+export async function setQuestTiming(
+  input: z.infer<typeof setQuestTimingSchema>,
+): Promise<Project> {
+  const userId = await requireUserId();
+
+  const parsed = setQuestTimingSchema.safeParse(input);
+  if (!parsed.success) {
+    throw new Error(parsed.error.issues[0]?.message ?? 'Invalid input');
+  }
+
+  const { projectId, availableAt, deadline } = parsed.data;
+
+  const project = await prisma.project.findUnique({
+    where: { id: projectId },
+    select: { userId: true },
+  });
+  if (!project) throw new Error('Project not found');
+  if (project.userId !== userId) throw new Error('Unauthorized');
+
+  return prisma.project.update({
+    where: { id: projectId },
+    data: {
+      availableAt: availableAt ? new Date(availableAt) : null,
+      deadline: deadline ? new Date(deadline) : null,
+    },
   });
 }
 

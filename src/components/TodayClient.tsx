@@ -7,6 +7,7 @@ import type { ProjectWithRelations } from '@/app/actions/projects';
 import { recurrenceLabel, isMissed } from '@/lib/recurrence';
 import { getQuestStatus, questProgress } from '@/lib/quest';
 import { difficultyMeta } from '@/lib/difficulty';
+import { isUpcoming, deadlineCountdown } from '@/lib/timing';
 import { Progress } from '@/components/ui/progress';
 import LogoutButton from '@/components/LogoutButton';
 import { cn } from '@/lib/utils';
@@ -47,9 +48,13 @@ export default function TodayClient({ initialProjects }: Props) {
   const weekEnd = new Date(todayStart);
   weekEnd.setDate(weekEnd.getDate() + 7);
 
-  // Active, top-level quests only (sub-quests live inside their epic).
+  // Active, top-level quests that are available now (upcoming ones are excluded
+  // — they're not actionable yet).
   const active = projects.filter(
-    (p) => p.parentId == null && getQuestStatus(p, projects) !== 'completed',
+    (p) =>
+      p.parentId == null &&
+      getQuestStatus(p, projects) !== 'completed' &&
+      !isUpcoming(p.availableAt, now),
   );
 
   function bucketFor(project: ProjectWithRelations): Bucket {
@@ -58,13 +63,18 @@ export default function TodayClient({ initialProjects }: Props) {
       dueDate: project.dueDate ? new Date(project.dueDate) : null,
       specificDate: project.specificDate ? new Date(project.specificDate) : null,
     };
-    if (isMissed(schedulable, now)) return 'overdue';
-    if (!project.dueDate) return 'none';
-    const due = new Date(project.dueDate);
-    if (due < todayStart) return 'overdue'; // past but not flagged missed (e.g. no objectives)
-    const dueStart = startOfDay(due);
+    // A finish-by deadline takes priority over recurrence due date for bucketing.
+    const effectiveDue = project.deadline
+      ? new Date(project.deadline)
+      : project.dueDate
+        ? new Date(project.dueDate)
+        : null;
+    if (project.deadline == null && isMissed(schedulable, now)) return 'overdue';
+    if (!effectiveDue) return 'none';
+    if (effectiveDue < todayStart) return 'overdue';
+    const dueStart = startOfDay(effectiveDue);
     if (dueStart.getTime() === todayStart.getTime()) return 'today';
-    if (due <= weekEnd) return 'week';
+    if (effectiveDue <= weekEnd) return 'week';
     return 'none';
   }
 
@@ -86,6 +96,7 @@ export default function TodayClient({ initialProjects }: Props) {
       specificDate: project.specificDate ? new Date(project.specificDate) : null,
     });
     const unit = project.isEpic ? 'sub-quest' : 'objective';
+    const countdown = deadlineCountdown(project.deadline, now, false);
 
     return (
       <Link
@@ -109,7 +120,23 @@ export default function TodayClient({ initialProjects }: Props) {
             {done}/{total} {unit}{total !== 1 ? 's' : ''}
           </span>
         </div>
-        {label && <p className="mt-1.5 text-xs text-zinc-500">{label}</p>}
+        <div className="mt-1.5 flex flex-wrap items-center gap-2 text-xs">
+          {countdown && (
+            <span
+              className={cn(
+                'font-medium',
+                countdown.tone === 'overdue'
+                  ? 'text-red-300'
+                  : countdown.tone === 'soon'
+                    ? 'text-amber-300'
+                    : 'text-zinc-400',
+              )}
+            >
+              ⏳ {countdown.label}
+            </span>
+          )}
+          {label && <span className="text-zinc-500">{label}</span>}
+        </div>
       </Link>
     );
   }

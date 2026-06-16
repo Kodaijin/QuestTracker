@@ -21,10 +21,12 @@ import {
   updateEpicSettings,
   setDifficulty,
   setTags,
+  setQuestTiming,
   deleteProject,
 } from '@/app/actions/projects';
 import type { ProjectWithRelations } from '@/app/actions/projects';
 import { recurrenceLabel, isMissed } from '@/lib/recurrence';
+import { deadlineCountdown, isUpcoming, formatActivatesIn } from '@/lib/timing';
 import {
   getChildren,
   questProgress,
@@ -140,6 +142,7 @@ export default function ProjectWorkspace({ initialProjects, projectId }: Props) 
   const [isSavingDifficulty, startSaveDifficulty] = useTransition();
   const [tagDraft, setTagDraft] = useState('');
   const [isSavingTags, startSaveTags] = useTransition();
+  const [isSavingTiming, startSaveTiming] = useTransition();
 
   // ── Sub-quest (epic) management state ───────────────────────────────────────────
   const [newSubQuestTitle, setNewSubQuestTitle] = useState('');
@@ -194,6 +197,13 @@ export default function ProjectWorkspace({ initialProjects, projectId }: Props) 
     dueDate: project.dueDate ? new Date(project.dueDate) : null,
     specificDate: project.specificDate ? new Date(project.specificDate) : null,
   });
+
+  const timingNow = new Date();
+  const questComplete = total > 0 && done === total;
+  const upcoming = isUpcoming(project.availableAt, timingNow);
+  const countdown = upcoming
+    ? null
+    : deadlineCountdown(project.deadline, timingNow, questComplete);
 
   // ── Handlers: toggle objective + gather item ──────────────────────────────────
 
@@ -278,6 +288,25 @@ export default function ProjectWorkspace({ initialProjects, projectId }: Props) 
   function handleRemoveTag(tag: string) {
     if (!project) return;
     persistTags(project.tags.filter((t) => t !== tag));
+  }
+
+  function handleSetTiming(nextAvailableDate: string, nextDeadlineDate: string) {
+    startSaveTiming(async () => {
+      try {
+        await setQuestTiming({
+          projectId,
+          availableAt: nextAvailableDate
+            ? new Date(`${nextAvailableDate}T00:00:00`).toISOString()
+            : null,
+          deadline: nextDeadlineDate
+            ? new Date(`${nextDeadlineDate}T23:59:59`).toISOString()
+            : null,
+        });
+        router.refresh();
+      } catch {
+        /* best-effort; refresh will resync */
+      }
+    });
   }
 
   // ── Handlers: add forms ───────────────────────────────────────────────────────
@@ -619,8 +648,27 @@ export default function ProjectWorkspace({ initialProjects, projectId }: Props) 
         )}
 
         {/* Epic / recurrence / missed badges */}
-        {(label || missed || isEpic || isSubQuest) && (
+        {(label || missed || isEpic || isSubQuest || upcoming || countdown) && (
           <div className="flex flex-wrap gap-1.5 mt-2">
+            {upcoming && project.availableAt && (
+              <span className="inline-flex items-center rounded-md bg-zinc-800 border border-zinc-600/50 px-2 py-0.5 text-xs font-medium text-zinc-300">
+                ◷ Activates {formatActivatesIn(project.availableAt, timingNow)}
+              </span>
+            )}
+            {countdown && (
+              <span
+                className={cn(
+                  'inline-flex items-center gap-1 rounded-md px-2 py-0.5 text-xs font-medium border',
+                  countdown.tone === 'overdue'
+                    ? 'bg-red-950/50 border-red-500/40 text-red-300'
+                    : countdown.tone === 'soon'
+                      ? 'bg-amber-950/40 border-amber-500/40 text-amber-300'
+                      : 'bg-zinc-800 border-zinc-600/50 text-zinc-300',
+                )}
+              >
+                ⏳ {countdown.label}
+              </span>
+            )}
             {isEpic && (
               <span className="inline-flex items-center rounded-md bg-amber-950/40 border border-amber-500/40 px-2 py-0.5 text-xs font-medium text-amber-300">
                 ⚔ Epic{project.sequential ? ' · in order' : ''}
@@ -749,6 +797,38 @@ export default function ProjectWorkspace({ initialProjects, projectId }: Props) 
             />
           </div>
         </div>
+
+        {/* Timing: becomes-active date + finish-by deadline (not for epics) */}
+        {!isEpic && (
+          <div className="mt-4 grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div>
+              <label htmlFor="ws-available" className="block text-xs font-medium text-zinc-500 uppercase tracking-wide mb-1.5">
+                Becomes active
+              </label>
+              <input
+                id="ws-available"
+                type="date"
+                value={toDateInputValue(project.availableAt)}
+                onChange={(e) => handleSetTiming(e.target.value, toDateInputValue(project.deadline))}
+                disabled={isSavingTiming}
+                className="field"
+              />
+            </div>
+            <div>
+              <label htmlFor="ws-deadline" className="block text-xs font-medium text-zinc-500 uppercase tracking-wide mb-1.5">
+                Finish by
+              </label>
+              <input
+                id="ws-deadline"
+                type="date"
+                value={toDateInputValue(project.deadline)}
+                onChange={(e) => handleSetTiming(toDateInputValue(project.availableAt), e.target.value)}
+                disabled={isSavingTiming}
+                className="field"
+              />
+            </div>
+          </div>
+        )}
 
         <div className="mt-5 space-y-1.5">
           <div className="flex justify-between text-xs text-zinc-400">
