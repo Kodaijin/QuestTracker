@@ -109,6 +109,26 @@ See `.env.example` for a complete template.
 - **CompletionEvent** — an append-only log of every objective/item/quest completion (with awarded XP and timestamp); the source of truth for XP, levels, streaks, and insights
 - **UnlockedAchievement** — records which achievement a user has earned and when (unique per user + achievement key)
 
+## Changelog
+
+### 2026-06-16 — Progression & planning update
+
+- **XP & leveling** with a quadratic curve and evolving rank titles, plus a level-up celebration
+- **Difficulty & rarity** (Trivial → Legendary) scaling XP rewards and card glow
+- **Daily streaks** with current/longest tracking and at-risk warnings
+- **Hero profile** (`/hero`) — level, XP, title, streaks, lifetime stats, and recent badges
+- **Today / Agenda** (`/today`), **Calendar** (`/calendar`), and **Insights** (`/insights`, with a contribution heatmap) views
+- **Tags, search & filters** on the quest board
+- New `CompletionEvent` log as the source of truth for XP, streaks, and insights
+
+### Earlier
+
+- Ambient aurora/mote background and element animations
+- **Epic Quests** — sub-quest hierarchy with optional in-order locking
+- Inventory on quest creation + objective/quest completion effects
+- **Achievements** added; inventory items became a toggle rather than a count
+- Initial QuestLog release — quests, objectives, recurrence, and authentication
+
 ## License
 
 GNU AFFERO GENERAL PUBLIC LICENSE
