@@ -57,6 +57,7 @@ export default function DashboardClient({ initialProjects }: Props) {
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
   const [objectives, setObjectives] = useState<string[]>(['']);
+  const [items, setItems] = useState<string[]>([]);
   const [icon, setIcon] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
@@ -88,6 +89,7 @@ export default function DashboardClient({ initialProjects }: Props) {
     setTitle('');
     setDescription('');
     setObjectives(['']);
+    setItems([]);
     setIcon(null);
     setError(null);
     setShowForm(false);
@@ -127,6 +129,7 @@ export default function DashboardClient({ initialProjects }: Props) {
           title: trimmedTitle,
           description: description.trim() || undefined,
           objectives: trimmedObjectives,
+          inventoryItems: items.map((i) => i.trim()).filter(Boolean),
           icon: icon ?? undefined,
           ...recurrencePayload,
         });
@@ -150,6 +153,18 @@ export default function DashboardClient({ initialProjects }: Props) {
     setObjectives((prev) =>
       prev.length === 1 ? prev : prev.filter((_, i) => i !== index),
     );
+  }
+
+  function updateItem(index: number, value: string) {
+    setItems((prev) => prev.map((it, i) => (i === index ? value : it)));
+  }
+
+  function addItemField() {
+    setItems((prev) => [...prev, '']);
+  }
+
+  function removeItemField(index: number) {
+    setItems((prev) => prev.filter((_, i) => i !== index));
   }
 
   function buildRecurrencePayload() {
@@ -401,6 +416,46 @@ export default function DashboardClient({ initialProjects }: Props) {
                   className="mt-2"
                 >
                   + Add objective
+                </Button>
+              </div>
+
+              {/* Inventory items (optional) */}
+              <div>
+                <label className="block text-sm font-medium text-zinc-300 mb-1.5">
+                  Inventory <span className="text-zinc-500">(optional — items needed for the quest)</span>
+                </label>
+                {items.length > 0 && (
+                  <div className="space-y-2">
+                    {items.map((item, index) => (
+                      <div key={index} className="flex gap-2">
+                        <input
+                          type="text"
+                          value={item}
+                          onChange={(e) => updateItem(index, e.target.value)}
+                          className="field flex-1"
+                          placeholder={`Item ${index + 1}`}
+                        />
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => removeItemField(index)}
+                          aria-label={`Remove item ${index + 1}`}
+                        >
+                          ✕
+                        </Button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  onClick={addItemField}
+                  className="mt-2"
+                >
+                  + Add item
                 </Button>
               </div>
 

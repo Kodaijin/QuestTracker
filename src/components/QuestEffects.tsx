@@ -1,0 +1,100 @@
+'use client';
+
+import { useState } from 'react';
+import type { CSSProperties } from 'react';
+
+const BURST_CHARS = ['✦', '✧', '✶', '⋆'];
+const RISE_CHARS = ['✦', '✧', '✨', '⭐', '🌟', '⋆'];
+
+type BurstParticle = { dx: number; dy: number; delay: number; char: string };
+type RiseParticle = { left: number; delay: number; size: number; char: string };
+
+/**
+ * A short-lived burst of sparkles flying outward from its center. Mount it
+ * (keyed by a nonce so it remounts each trigger) over the element you want to
+ * celebrate; it auto-fades via CSS. The parent must be `position: relative`.
+ */
+export function SparkleBurst({ count = 8 }: { count?: number }) {
+  const [particles] = useState<BurstParticle[]>(() =>
+    Array.from({ length: count }, (_, i) => {
+      const angle = (i / count) * Math.PI * 2 + Math.random() * 0.6;
+      const dist = 16 + Math.random() * 12;
+      return {
+        dx: Math.cos(angle) * dist,
+        dy: Math.sin(angle) * dist,
+        delay: Math.random() * 0.08,
+        char: BURST_CHARS[i % BURST_CHARS.length],
+      };
+    }),
+  );
+
+  return (
+    <span className="pointer-events-none absolute inset-0" aria-hidden>
+      {particles.map((p, i) => (
+        <span
+          key={i}
+          className="sparkle-burst-particle text-[0.7rem] leading-none text-amber-300"
+          style={
+            {
+              '--dx': `${p.dx}px`,
+              '--dy': `${p.dy}px`,
+              animationDelay: `${p.delay}s`,
+            } as CSSProperties
+          }
+        >
+          {p.char}
+        </span>
+      ))}
+    </span>
+  );
+}
+
+/**
+ * The "quest complete" celebration: sparkles drifting upward across the header
+ * plus a floating toast. Render inside a `position: relative` container (the
+ * toast is fixed, so it escapes to the viewport regardless).
+ */
+export function QuestCompleteEffect({ count = 18 }: { count?: number }) {
+  const [particles] = useState<RiseParticle[]>(() =>
+    Array.from({ length: count }, () => ({
+      left: Math.random() * 100,
+      delay: Math.random() * 0.7,
+      size: 0.7 + Math.random() * 0.8,
+      char: RISE_CHARS[Math.floor(Math.random() * RISE_CHARS.length)],
+    })),
+  );
+
+  return (
+    <>
+      {/* Rising sparkles layered over the header. */}
+      <span
+        className="pointer-events-none absolute inset-x-0 bottom-0 top-0 overflow-visible"
+        aria-hidden
+      >
+        {particles.map((p, i) => (
+          <span
+            key={i}
+            className="sparkle-rise-particle leading-none text-amber-300"
+            style={{
+              left: `${p.left}%`,
+              fontSize: `${p.size}rem`,
+              animationDelay: `${p.delay}s`,
+            }}
+          >
+            {p.char}
+          </span>
+        ))}
+      </span>
+
+      {/* Floating toast. */}
+      <div
+        role="status"
+        className="animate-toast fixed left-1/2 top-6 z-50 flex items-center gap-2 rounded-full border border-amber-400/50 bg-amber-950/80 px-5 py-2 text-sm font-semibold text-amber-200 shadow-glow backdrop-blur"
+      >
+        <span aria-hidden>✨</span>
+        Quest Complete!
+        <span aria-hidden>✨</span>
+      </div>
+    </>
+  );
+}

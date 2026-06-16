@@ -65,3 +65,93 @@
     @apply w-full rounded-lg border border-zinc-700 bg-zinc-900/70 px-3 py-2 text-sm text-zinc-100 placeholder:text-zinc-500 transition-colors focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500/60;
   }
 }
+
+/* ── Completion reward effects ────────────────────────────────────────────── */
+
+/* Objective row: brief green glow flash when checked off. */
+@keyframes objective-glow {
+  0%   { background-color: rgba(16, 185, 129, 0); }
+  25%  { background-color: rgba(16, 185, 129, 0.22); }
+  100% { background-color: rgba(16, 185, 129, 0); }
+}
+.animate-objective-glow {
+  animation: objective-glow 0.8s ease-out;
+}
+
+/* Checkbox: pop/bounce when checked. */
+@keyframes check-pop {
+  0%   { transform: scale(1); }
+  35%  { transform: scale(1.35); }
+  60%  { transform: scale(0.92); }
+  100% { transform: scale(1); }
+}
+.animate-check-pop {
+  animation: check-pop 0.45s ease-out;
+}
+
+/* Sparkles bursting outward from the checkbox.
+   --dx / --dy set per-particle via inline style. */
+@keyframes sparkle-burst {
+  0%   { transform: translate(-50%, -50%) scale(0.2); opacity: 0; }
+  25%  { opacity: 1; }
+  100% { transform: translate(calc(-50% + var(--dx)), calc(-50% + var(--dy))) scale(1); opacity: 0; }
+}
+.sparkle-burst-particle {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  pointer-events: none;
+  animation: sparkle-burst 0.8s ease-out forwards;
+}
+
+/* Quest header: golden magical glow pulse when all objectives complete. */
+@keyframes quest-gold-glow {
+  0%, 100% { text-shadow: none; }
+  50% {
+    text-shadow:
+      0 0 14px rgba(251, 191, 36, 0.85),
+      0 0 30px rgba(251, 191, 36, 0.5);
+  }
+}
+.animate-quest-glow {
+  animation: quest-gold-glow 1.1s ease-in-out 2;
+}
+
+/* Sparkles drifting upward over the header (quest complete). */
+@keyframes sparkle-rise {
+  0%   { transform: translateY(0) scale(0.4); opacity: 0; }
+  20%  { opacity: 1; }
+  100% { transform: translateY(-90px) scale(1); opacity: 0; }
+}
+.sparkle-rise-particle {
+  position: absolute;
+  bottom: 0;
+  pointer-events: none;
+  animation: sparkle-rise 1.6s ease-out forwards;
+}
+
+/* "Quest Complete!" toast slide/fade in and out. */
+@keyframes toast-in-out {
+  0%   { transform: translate(-50%, -16px); opacity: 0; }
+  12%  { transform: translate(-50%, 0); opacity: 1; }
+  80%  { transform: translate(-50%, 0); opacity: 1; }
+  100% { transform: translate(-50%, -16px); opacity: 0; }
+}
+.animate-toast {
+  animation: toast-in-out 3s ease-in-out forwards;
+}
+
+/* Respect users who prefer reduced motion: drop the movement, keep things readable. */
+@media (prefers-reduced-motion: reduce) {
+  .animate-objective-glow,
+  .animate-check-pop,
+  .sparkle-burst-particle,
+  .animate-quest-glow,
+  .sparkle-rise-particle {
+    animation: none !important;
+  }
+  .sparkle-burst-particle,
+  .sparkle-rise-particle {
+    display: none;
+  }
+}

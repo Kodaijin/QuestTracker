@@ -155,6 +155,10 @@ const createProjectSchema = z
     objectives: z
       .array(z.string().trim().min(1))
       .min(1, 'At least one objective is required'),
+    inventoryItems: z
+      .array(z.string().trim().min(1))
+      .optional()
+      .default([]),
   })
   .merge(recurrenceSchema);
 
@@ -202,7 +206,8 @@ export async function createProject(
     throw new Error(parsed.error.issues[0]?.message ?? 'Invalid input');
   }
 
-  const { title, description, icon, objectives, ...recInput } = parsed.data;
+  const { title, description, icon, objectives, inventoryItems, ...recInput } =
+    parsed.data;
   const recFields = normaliseRecurrence(recInput);
 
   return prisma.project.create({
@@ -223,6 +228,9 @@ export async function createProject(
           order: index + 1,
           isCompleted: false,
         })),
+      },
+      inventoryItems: {
+        create: inventoryItems.map((name) => ({ name, gathered: false })),
       },
     },
   });

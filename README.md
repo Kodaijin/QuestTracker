@@ -1,14 +1,16 @@
 # QuestLog
 
-A gamified, RPG-flavored task tracker. Turn your projects into **quests**, break them into **objectives**, track loot in an **inventory**, and let recurring quests reset themselves on a schedule.
+A gamified, RPG-flavored task tracker. Turn your projects into **quests**, break them into **objectives**, check off the **loot** you've gathered, earn **achievements**, and let recurring quests reset themselves on a schedule.
 
 Built with Next.js (App Router), Prisma, PostgreSQL, and NextAuth — fully containerized with Docker.
 
 ## Features
 
-- **Quests** — projects with a title, description, and custom icon
-- **Objectives** — ordered, checkable sub-tasks that drive each quest's completion progress
-- **Inventory** — track named items and quantities attached to a quest
+- **Quests** — projects with a title, description, and custom icon; created with their objectives (and optional inventory) up front
+- **Objectives** — ordered, checkable sub-tasks that drive each quest's completion progress; every quest requires at least one
+- **Inventory** — a checklist of named items needed for a quest; check each off as you gather it
+- **Achievements** — 50+ cheeky badges unlocked just by using the app, tracked per user and never revoked once earned
+- **Completion effects** — sparkle-and-glow feedback when you check an objective, and a golden "Quest Complete!" celebration when a quest is finished (respects `prefers-reduced-motion`)
 - **Recurring quests** — daily, weekly, every N weeks, monthly, or a specific date; elapsed quests advance automatically on load
 - **Authentication** — email/password accounts via NextAuth, with a security-question password reset flow
 - **Custom icons** — upload and auto-resize quest icons
@@ -86,14 +88,16 @@ See `.env.example` for a complete template.
 | `npm run typecheck`  | Type-check with `tsc --noEmit`       |
 | `npm run db:migrate` | Run Prisma migrations (dev)          |
 | `npm run db:generate`| Generate the Prisma client           |
+| `npm run smoke`      | Run the database/auth smoke test     |
 | `npm run icons:resize`| Resize quest icons                  |
 
 ## Data Model
 
-- **User** — owns many projects; stores credentials and an optional security question
+- **User** — owns many projects and unlocked achievements; stores credentials and an optional security question
 - **Project (Quest)** — title, description, icon, recurrence settings, and due/completion dates
 - **Objective** — ordered, completable sub-tasks belonging to a quest
-- **InventoryItem** — named items with quantities belonging to a quest
+- **InventoryItem** — named items belonging to a quest, each with a `gathered` checkbox state
+- **UnlockedAchievement** — records which achievement a user has earned and when (unique per user + achievement key)
 
 ## License
 

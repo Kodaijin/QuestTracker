@@ -36,7 +36,13 @@
       "Bash(git config *)",
       "Bash(gh auth *)",
       "Bash(gh api *)",
-      "PowerShell(git config *)"
+      "PowerShell(git config *)",
+      "Bash(npm run *)",
+      "PowerShell(docker compose ps *)",
+      "PowerShell(docker compose up *)",
+      "PowerShell(docker compose exec *)",
+      "PowerShell($env:DATABASE_URL = \"postgresql://questlog_user:questlog_password@localhost:5432/questlog_dev\"; npx prisma migrate dev)",
+      "PowerShell($env:DATABASE_URL = \"postgresql://questlog_user:questlog_password@localhost:5432/questlog_dev\"; npx prisma migrate status)"
     ]
   }
 }

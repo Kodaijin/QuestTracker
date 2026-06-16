@@ -26,6 +26,7 @@ import { Progress } from '@/components/ui/progress';
 import { cn } from '@/lib/utils';
 import IconPicker from '@/components/IconPicker';
 import LogoutButton from '@/components/LogoutButton';
+import { SparkleBurst, QuestCompleteEffect } from '@/components/QuestEffects';
 
 interface Props {
   initialProjects: ProjectWithRelations[];
@@ -112,6 +113,12 @@ export default function ProjectWorkspace({ initialProjects, projectId }: Props) 
   const [iconError, setIconError] = useState<string | null>(null);
   const [isSavingIcon, startSaveIcon] = useTransition();
 
+  // ── Completion reward effects ──────────────────────────────────────────────────
+  // `celebrate` drives the per-objective sparkle/glow; `questDone` the full-quest
+  // celebration. Both carry a nonce so remounting restarts the CSS animation.
+  const [celebrate, setCelebrate] = useState<{ objId: string; nonce: number } | null>(null);
+  const [questDone, setQuestDone] = useState<number | null>(null);
+
   useEffect(() => {
     hydrate(initialProjects);
   }, [hydrate, initialProjects]);
@@ -154,6 +161,29 @@ export default function ProjectWorkspace({ initialProjects, projectId }: Props) 
 
   async function handleToggle(objectiveId: string) {
     const prev = optimisticToggle(objectiveId);
+
+    // Only celebrate when an objective transitions into completion.
+    if (!prev) {
+      setCelebrate({ objId: objectiveId, nonce: Date.now() });
+      window.setTimeout(() => {
+        setCelebrate((c) => (c?.objId === objectiveId ? null : c));
+      }, 900);
+
+      // If this check completed the whole quest, fire the big celebration.
+      const fresh = useProjectStore.getState().projects.find((p) => p.id === projectId);
+      const allDone =
+        fresh != null &&
+        fresh.objectives.length > 0 &&
+        fresh.objectives.every((o) => o.isCompleted);
+      if (allDone) {
+        const nonce = Date.now();
+        setQuestDone(nonce);
+        window.setTimeout(() => {
+          setQuestDone((q) => (q === nonce ? null : q));
+        }, 3000);
+      }
+    }
+
     try {
       await toggleObjective({ objectiveId });
     } catch {
@@ -391,7 +421,8 @@ export default function ProjectWorkspace({ initialProjects, projectId }: Props) 
   return (
     <main className="max-w-3xl mx-auto px-6 py-12 space-y-8">
       {/* Header */}
-      <div>
+      <div className="relative">
+        {questDone != null && <QuestCompleteEffect key={questDone} />}
         <div className="flex items-center justify-between mb-5">
           <Link
             href="/"
@@ -428,7 +459,12 @@ export default function ProjectWorkspace({ initialProjects, projectId }: Props) 
           </div>
         ) : (
           <div className="flex items-center gap-3 group mt-1">
-            <h1 className="text-3xl font-bold tracking-tight text-zinc-50">
+            <h1
+              className={cn(
+                'text-3xl font-bold tracking-tight text-zinc-50',
+                questDone != null && 'animate-quest-glow',
+              )}
+            >
               {project.title}
             </h1>
             <button
@@ -509,10 +545,15 @@ export default function ProjectWorkspace({ initialProjects, projectId }: Props) 
             <p className="text-sm text-zinc-500">No objectives yet.</p>
           ) : (
             <ul className="space-y-1">
-              {project.objectives.map((obj) => (
+              {project.objectives.map((obj) => {
+                const isCelebrating = celebrate?.objId === obj.id;
+                return (
                 <li
                   key={obj.id}
-                  className="flex items-center gap-2 rounded-lg px-2 py-2 -mx-2 hover:bg-zinc-800/40 transition-colors group"
+                  className={cn(
+                    'relative flex items-center gap-2 rounded-lg px-2 py-2 -mx-2 hover:bg-zinc-800/40 transition-colors group',
+                    isCelebrating && 'animate-objective-glow',
+                  )}
                 >
                   {editingObjId === obj.id ? (
                     <>
@@ -540,10 +581,14 @@ export default function ProjectWorkspace({ initialProjects, projectId }: Props) 
                     </>
                   ) : (
                     <>
-                      <Checkbox
-                        checked={obj.isCompleted}
-                        onCheckedChange={() => handleToggle(obj.id)}
-                      />
+                      <span className="relative inline-flex flex-shrink-0">
+                        <Checkbox
+                          checked={obj.isCompleted}
+                          onCheckedChange={() => handleToggle(obj.id)}
+                          className={cn(isCelebrating && 'animate-check-pop')}
+                        />
+                        {isCelebrating && <SparkleBurst key={celebrate.nonce} />}
+                      </span>
                       <span
                         className={cn(
                           'text-sm flex-1 transition-colors',
@@ -573,7 +618,8 @@ export default function ProjectWorkspace({ initialProjects, projectId }: Props) 
                     </>
                   )}
                 </li>
-              ))}
+                );
+              })}
             </ul>
           )}
 
