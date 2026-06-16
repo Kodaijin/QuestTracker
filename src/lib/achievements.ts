@@ -1,5 +1,6 @@
 import { RecurrenceType } from '@prisma/client';
 import type { ProjectWithRelations } from '@/app/actions/projects';
+import { getChildren, isQuestComplete } from '@/lib/quest';
 
 /**
  * Aggregate snapshot of a user's quest activity, computed from their current
@@ -29,6 +30,9 @@ export type QuestStats = {
   questsFullyGathered: number; // has items AND every item gathered
   completedQuestsWithInventory: number;
   longestTitleLength: number;
+  epicsCreated: number;
+  epicsCompleted: number;
+  maxSubQuests: number;
 };
 
 export type Achievement = {
@@ -62,9 +66,21 @@ export function computeStats(projects: ProjectWithRelations[]): QuestStats {
     questsFullyGathered: 0,
     completedQuestsWithInventory: 0,
     longestTitleLength: 0,
+    epicsCreated: 0,
+    epicsCompleted: 0,
+    maxSubQuests: 0,
   };
 
   for (const p of projects) {
+    if (p.isEpic) {
+      s.epicsCreated++;
+      const subQuests = getChildren(p, projects);
+      s.maxSubQuests = Math.max(s.maxSubQuests, subQuests.length);
+      if (isQuestComplete(p, projects)) s.epicsCompleted++;
+      s.longestTitleLength = Math.max(s.longestTitleLength, p.title.length);
+      continue; // epics have no direct objectives/inventory of their own
+    }
+
     const total = p.objectives.length;
     const done = p.objectives.filter((o) => o.isCompleted).length;
     const completed = total > 0 && done === total;
@@ -181,6 +197,11 @@ export const ACHIEVEMENTS: Achievement[] = [
   { key: 'productive-day', name: 'Productive', icon: '🚀', description: 'Complete 10 quests with 25 objectives checked.', check: (s) => s.completedQuests >= 10 && s.completedObjectives >= 25 },
   { key: 'overachiever', name: 'Overachiever', icon: '🏆', description: 'Complete 25 quests AND gather 25 items.', check: (s) => s.completedQuests >= 25 && s.gatheredItems >= 25 },
   { key: 'living-the-dream', name: 'Living The Dream', icon: '🦄', description: 'Complete 50 quests, gather 50 items, run 5 recurring quests.', check: (s) => s.completedQuests >= 50 && s.gatheredItems >= 50 && s.recurringQuests >= 5 },
+
+  // ── Epic quests ────────────────────────────────────────────────────────────
+  { key: 'first-epic', name: 'Epic Undertaking', icon: '⚔️', description: 'Create your first Epic Quest.', check: (s) => s.epicsCreated >= 1 },
+  { key: 'saga', name: 'Saga', icon: '📖', description: 'Build an Epic with 5+ sub-quests.', check: (s) => s.maxSubQuests >= 5 },
+  { key: 'epic-win', name: 'Epic Win', icon: '🐲', description: 'Complete an entire Epic Quest.', check: (s) => s.epicsCompleted >= 1 },
 ];
 
 /** Returns the keys of every achievement currently satisfied by the stats. */

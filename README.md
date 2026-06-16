@@ -7,6 +7,7 @@ Built with Next.js (App Router), Prisma, PostgreSQL, and NextAuth — fully cont
 ## Features
 
 - **Quests** — projects with a title, description, and custom icon; created with their objectives (and optional inventory) up front
+- **Epic Quests** — quests whose "objectives" are full sub-quests (each with its own objectives, inventory, and page); optionally enforced **in order**, hard-locking later sub-quests (🔒) until earlier ones are complete
 - **Objectives** — ordered, checkable sub-tasks that drive each quest's completion progress; every quest requires at least one
 - **Inventory** — a checklist of named items needed for a quest; check each off as you gather it
 - **Achievements** — 50+ cheeky badges unlocked just by using the app, tracked per user and never revoked once earned
@@ -94,7 +95,7 @@ See `.env.example` for a complete template.
 ## Data Model
 
 - **User** — owns many projects and unlocked achievements; stores credentials and an optional security question
-- **Project (Quest)** — title, description, icon, recurrence settings, and due/completion dates
+- **Project (Quest)** — title, description, icon, recurrence settings, and due/completion dates. An Epic is a Project with `isEpic`; its sub-quests are Projects pointing back via `parentId` (with `epicOrder` for sequencing and a `sequential` flag on the Epic)
 - **Objective** — ordered, completable sub-tasks belonging to a quest
 - **InventoryItem** — named items belonging to a quest, each with a `gathered` checkbox state
 - **UnlockedAchievement** — records which achievement a user has earned and when (unique per user + achievement key)

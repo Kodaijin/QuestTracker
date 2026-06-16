@@ -8,6 +8,7 @@ import { useProjectStore } from '@/store/useProjectStore';
 import { createProject, deleteProject } from '@/app/actions/projects';
 import type { ProjectWithRelations } from '@/app/actions/projects';
 import { recurrenceLabel, isMissed } from '@/lib/recurrence';
+import { getQuestStatus, questProgress, type QuestStatus } from '@/lib/quest';
 import { Button } from '@/components/ui/button';
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
 import { Progress } from '@/components/ui/progress';
@@ -17,17 +18,6 @@ import LogoutButton from '@/components/LogoutButton';
 
 interface Props {
   initialProjects: ProjectWithRelations[];
-}
-
-type QuestStatus = 'accepted' | 'in-progress' | 'completed';
-
-function getQuestStatus(project: ProjectWithRelations): QuestStatus {
-  const total = project.objectives.length;
-  if (total === 0) return 'accepted';
-  const done = project.objectives.filter((o) => o.isCompleted).length;
-  if (done === total) return 'completed';
-  if (done > 0) return 'in-progress';
-  return 'accepted';
 }
 
 const statusCardStyles: Record<QuestStatus, string> = {
@@ -63,6 +53,11 @@ export default function DashboardClient({ initialProjects }: Props) {
   const [isPending, startTransition] = useTransition();
   const [showCompleted, setShowCompleted] = useState(true);
 
+  // ── Epic state ──────────────────────────────────────────────────────────────
+  const [isEpic, setIsEpic] = useState(false);
+  const [sequential, setSequential] = useState(false);
+  const [subQuests, setSubQuests] = useState<string[]>(['']);
+
   // ── Recurrence state ──────────────────────────────────────────────────────────
   const [recurrenceType, setRecurrenceType] = useState<RecurrenceType>(RecurrenceType.NONE);
   const [dayOfWeek, setDayOfWeek] = useState<number>(1);
@@ -76,14 +71,19 @@ export default function DashboardClient({ initialProjects }: Props) {
 
   const projects = storeProjects.length > 0 ? storeProjects : initialProjects;
 
+  // Only top-level quests (and epics) appear on the dashboard; sub-quests live
+  // inside their epic. The full `projects` list is still passed to the helpers so
+  // epic progress can be resolved from its children.
+  const topLevel = projects.filter((p) => p.parentId == null);
+
   // ── Stats (mutually exclusive buckets) ────────────────────────────────────────
-  const accepted = projects.filter((p) => getQuestStatus(p) === 'accepted').length;
-  const inProgress = projects.filter((p) => getQuestStatus(p) === 'in-progress').length;
-  const completed = projects.filter((p) => getQuestStatus(p) === 'completed').length;
+  const accepted = topLevel.filter((p) => getQuestStatus(p, projects) === 'accepted').length;
+  const inProgress = topLevel.filter((p) => getQuestStatus(p, projects) === 'in-progress').length;
+  const completed = topLevel.filter((p) => getQuestStatus(p, projects) === 'completed').length;
 
   // ── Partitioned quest lists ───────────────────────────────────────────────────
-  const activeProjects = projects.filter((p) => getQuestStatus(p) !== 'completed');
-  const completedProjects = projects.filter((p) => getQuestStatus(p) === 'completed');
+  const activeProjects = topLevel.filter((p) => getQuestStatus(p, projects) !== 'completed');
+  const completedProjects = topLevel.filter((p) => getQuestStatus(p, projects) === 'completed');
 
   function resetForm() {
     setTitle('');
@@ -93,6 +93,9 @@ export default function DashboardClient({ initialProjects }: Props) {
     setIcon(null);
     setError(null);
     setShowForm(false);
+    setIsEpic(false);
+    setSequential(false);
+    setSubQuests(['']);
     setRecurrenceType(RecurrenceType.NONE);
     setDayOfWeek(1);
     setIntervalWeeks(2);
@@ -110,6 +113,29 @@ export default function DashboardClient({ initialProjects }: Props) {
       return;
     }
 
+    // ── Epic quest: title + (optional) sub-quest titles + sequencing ────────────
+    if (isEpic) {
+      const trimmedSubQuests = subQuests.map((s) => s.trim()).filter(Boolean);
+      startTransition(async () => {
+        try {
+          await createProject({
+            title: trimmedTitle,
+            description: description.trim() || undefined,
+            icon: icon ?? undefined,
+            isEpic: true,
+            sequential,
+            subQuests: trimmedSubQuests,
+          });
+          resetForm();
+          router.refresh();
+        } catch (err) {
+          setError(err instanceof Error ? err.message : 'Failed to create epic quest');
+        }
+      });
+      return;
+    }
+
+    // ── Normal quest ────────────────────────────────────────────────────────────
     const trimmedObjectives = objectives.map((o) => o.trim()).filter(Boolean);
     if (trimmedObjectives.length === 0) {
       setError('Add at least one objective');
@@ -139,6 +165,20 @@ export default function DashboardClient({ initialProjects }: Props) {
         setError(err instanceof Error ? err.message : 'Failed to create quest');
       }
     });
+  }
+
+  function updateSubQuest(index: number, value: string) {
+    setSubQuests((prev) => prev.map((s, i) => (i === index ? value : s)));
+  }
+
+  function addSubQuestField() {
+    setSubQuests((prev) => [...prev, '']);
+  }
+
+  function removeSubQuestField(index: number) {
+    setSubQuests((prev) =>
+      prev.length === 1 ? prev : prev.filter((_, i) => i !== index),
+    );
   }
 
   function updateObjective(index: number, value: string) {
@@ -198,10 +238,10 @@ export default function DashboardClient({ initialProjects }: Props) {
   }
 
   function renderQuestCard(project: ProjectWithRelations) {
-    const total = project.objectives.length;
-    const done = project.objectives.filter((o) => o.isCompleted).length;
+    const { done, total } = questProgress(project, projects);
     const pct = total > 0 ? Math.round((done / total) * 100) : 0;
-    const status = getQuestStatus(project);
+    const status = getQuestStatus(project, projects);
+    const unit = project.isEpic ? 'sub-quest' : 'objective';
     const missed = isMissed(
       {
         ...project,
@@ -241,8 +281,13 @@ export default function DashboardClient({ initialProjects }: Props) {
                   {project.title}
                 </span>
               </CardTitle>
-              {(label || missed) && (
+              {(label || missed || project.isEpic) && (
                 <div className="flex flex-wrap gap-1.5 mt-1.5">
+                  {project.isEpic && (
+                    <span className="inline-flex items-center rounded-md bg-amber-950/40 border border-amber-500/40 px-2 py-0.5 text-xs font-medium text-amber-300">
+                      ⚔ Epic{project.sequential ? ' · in order' : ''}
+                    </span>
+                  )}
                   {label && (
                     <span className="inline-flex items-center rounded-md bg-zinc-800 px-2 py-0.5 text-xs font-medium text-zinc-300">
                       {label}
@@ -265,12 +310,12 @@ export default function DashboardClient({ initialProjects }: Props) {
               <div className="space-y-2">
                 <div className="flex justify-between text-xs text-zinc-400">
                   <span>
-                    {done}/{total} objective{total !== 1 ? 's' : ''}
+                    {done}/{total} {unit}{total !== 1 ? 's' : ''}
                   </span>
                   <span className="font-medium text-zinc-300">{pct}%</span>
                 </div>
                 <Progress value={pct} />
-                {project.inventoryItems.length > 0 && (
+                {!project.isEpic && project.inventoryItems.length > 0 && (
                   <p className="text-xs text-zinc-500 pt-1">
                     {project.inventoryItems.length} inventory item
                     {project.inventoryItems.length !== 1 ? 's' : ''}
@@ -380,6 +425,21 @@ export default function DashboardClient({ initialProjects }: Props) {
                 />
               </div>
 
+              {/* Epic Quest toggle */}
+              <label className="flex items-center gap-2.5 rounded-lg border border-zinc-700 bg-zinc-900/40 px-3 py-2.5 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={isEpic}
+                  onChange={(e) => setIsEpic(e.target.checked)}
+                  className="h-4 w-4 accent-amber-500"
+                />
+                <span className="text-sm text-zinc-200">
+                  ⚔ Epic Quest <span className="text-zinc-500">— made of sub-quests instead of objectives</span>
+                </span>
+              </label>
+
+              {!isEpic && (
+                <>
               {/* Objectives (at least one required) */}
               <div>
                 <label className="block text-sm font-medium text-zinc-300 mb-1.5">
@@ -458,6 +518,70 @@ export default function DashboardClient({ initialProjects }: Props) {
                   + Add item
                 </Button>
               </div>
+                </>
+              )}
+
+              {isEpic && (
+                <>
+                  {/* Sub-quests */}
+                  <div>
+                    <label className="block text-sm font-medium text-zinc-300 mb-1.5">
+                      Sub-quests <span className="text-zinc-500">(optional now — flesh each one out later)</span>
+                    </label>
+                    {subQuests.length > 0 && (
+                      <div className="space-y-2">
+                        {subQuests.map((sub, index) => (
+                          <div key={index} className="flex gap-2">
+                            <span className="flex items-center text-xs text-zinc-500 w-5 justify-end">
+                              {index + 1}.
+                            </span>
+                            <input
+                              type="text"
+                              value={sub}
+                              onChange={(e) => updateSubQuest(index, e.target.value)}
+                              className="field flex-1"
+                              placeholder={`Sub-quest ${index + 1}`}
+                            />
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => removeSubQuestField(index)}
+                              disabled={subQuests.length === 1}
+                              aria-label={`Remove sub-quest ${index + 1}`}
+                            >
+                              ✕
+                            </Button>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      onClick={addSubQuestField}
+                      className="mt-2"
+                    >
+                      + Add sub-quest
+                    </Button>
+                  </div>
+
+                  {/* Sequential toggle */}
+                  <label className="flex items-center gap-2.5 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={sequential}
+                      onChange={(e) => setSequential(e.target.checked)}
+                      className="h-4 w-4 accent-amber-500"
+                    />
+                    <span className="text-sm text-zinc-200">
+                      Sub-quests must be done in order
+                      <span className="text-zinc-500"> — later ones stay locked 🔒 until earlier ones are complete</span>
+                    </span>
+                  </label>
+                </>
+              )}
 
               {/* Icon picker */}
               <div>
@@ -467,6 +591,8 @@ export default function DashboardClient({ initialProjects }: Props) {
                 <IconPicker value={icon} onChange={setIcon} disabled={isPending} />
               </div>
 
+              {!isEpic && (
+                <>
               {/* Repeat / Recurrence section */}
               <div>
                 <label
@@ -593,12 +719,14 @@ export default function DashboardClient({ initialProjects }: Props) {
                   />
                 </div>
               )}
+                </>
+              )}
 
               {error && <p className="text-sm text-red-400">{error}</p>}
 
               <div className="flex gap-2">
                 <Button type="submit" disabled={isPending}>
-                  {isPending ? 'Creating…' : 'Create Quest'}
+                  {isPending ? 'Creating…' : isEpic ? 'Create Epic' : 'Create Quest'}
                 </Button>
                 <Button
                   type="button"

@@ -44,11 +44,18 @@ model Project {
   dueDate         DateTime?
   lastCompletedAt DateTime?
   icon            String?
+  isEpic          Boolean        @default(false)
+  sequential      Boolean        @default(false)
+  parentId        String?
+  epicOrder       Int?
   user            User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  parent          Project?       @relation("EpicChildren", fields: [parentId], references: [id], onDelete: Cascade)
+  children        Project[]      @relation("EpicChildren")
   objectives      Objective[]
   inventoryItems  InventoryItem[]
 
   @@index([userId])
+  @@index([parentId])
 }
 
 model Objective {

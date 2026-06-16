@@ -21,6 +21,37 @@ async function requireUserId(): Promise<string> {
   return session.user.id;
 }
 
+/**
+ * Server-side mirror of `lockedSubQuestIds` for a single sub-quest: under a
+ * `sequential` epic, a sub-quest is locked while any earlier sibling (by
+ * `epicOrder`) is incomplete. Used to reject edits to locked sub-quests.
+ */
+async function isSubQuestLockedOnServer(
+  parentId: string,
+  subQuestId: string,
+): Promise<boolean> {
+  const parent = await prisma.project.findUnique({
+    where: { id: parentId },
+    select: {
+      sequential: true,
+      children: {
+        orderBy: { epicOrder: 'asc' },
+        select: { id: true, objectives: { select: { isCompleted: true } } },
+      },
+    },
+  });
+  if (!parent || !parent.sequential) return false;
+
+  let blocked = false;
+  for (const child of parent.children) {
+    if (child.id === subQuestId) return blocked;
+    const complete =
+      child.objectives.length > 0 && child.objectives.every((o) => o.isCompleted);
+    if (!complete) blocked = true;
+  }
+  return false;
+}
+
 // ── Recurrence schema ──────────────────────────────────────────────────────────
 
 const recurrenceSchema = z
@@ -154,8 +185,15 @@ const createProjectSchema = z
       .optional(),
     objectives: z
       .array(z.string().trim().min(1))
-      .min(1, 'At least one objective is required'),
+      .optional()
+      .default([]),
     inventoryItems: z
+      .array(z.string().trim().min(1))
+      .optional()
+      .default([]),
+    isEpic: z.boolean().optional().default(false),
+    sequential: z.boolean().optional().default(false),
+    subQuests: z
       .array(z.string().trim().min(1))
       .optional()
       .default([]),
@@ -178,6 +216,21 @@ const createObjectiveSchema = z.object({
 const createInventoryItemSchema = z.object({
   projectId: z.string().min(1, 'projectId is required'),
   name: z.string().min(1, 'Name is required'),
+});
+
+const createSubQuestSchema = z.object({
+  epicId: z.string().min(1, 'epicId is required'),
+  title: z.string().trim().min(1, 'Title is required'),
+});
+
+const reorderSubQuestSchema = z.object({
+  subQuestId: z.string().min(1, 'subQuestId is required'),
+  direction: z.enum(['up', 'down']),
+});
+
+const updateEpicSettingsSchema = z.object({
+  epicId: z.string().min(1, 'epicId is required'),
+  sequential: z.boolean(),
 });
 
 const toggleObjectiveSchema = z.object({
@@ -206,8 +259,46 @@ export async function createProject(
     throw new Error(parsed.error.issues[0]?.message ?? 'Invalid input');
   }
 
-  const { title, description, icon, objectives, inventoryItems, ...recInput } =
-    parsed.data;
+  const {
+    title,
+    description,
+    icon,
+    objectives,
+    inventoryItems,
+    isEpic,
+    sequential,
+    subQuests,
+    ...recInput
+  } = parsed.data;
+
+  // Epic quests are non-recurring containers; their content is sub-quests, which
+  // are created as child projects (each a full quest fleshed out later).
+  if (isEpic) {
+    return prisma.project.create({
+      data: {
+        title,
+        description: description ?? null,
+        icon: icon ?? null,
+        userId,
+        isEpic: true,
+        sequential,
+        recurrenceType: RecurrenceType.NONE,
+        children: {
+          create: subQuests.map((subTitle, index) => ({
+            title: subTitle,
+            userId,
+            epicOrder: index,
+            recurrenceType: RecurrenceType.NONE,
+          })),
+        },
+      },
+    });
+  }
+
+  if (objectives.length === 0) {
+    throw new Error('At least one objective is required');
+  }
+
   const recFields = normaliseRecurrence(recInput);
 
   return prisma.project.create({
@@ -294,6 +385,111 @@ export async function createInventoryItem(
   });
 }
 
+export async function createSubQuest(
+  input: z.infer<typeof createSubQuestSchema>,
+): Promise<Project> {
+  const userId = await requireUserId();
+
+  const parsed = createSubQuestSchema.safeParse(input);
+  if (!parsed.success) {
+    throw new Error(parsed.error.issues[0]?.message ?? 'Invalid input');
+  }
+
+  const { epicId, title } = parsed.data;
+
+  const epic = await prisma.project.findUnique({
+    where: { id: epicId },
+    select: { userId: true, isEpic: true, parentId: true },
+  });
+  if (!epic) throw new Error('Epic not found');
+  if (epic.userId !== userId) throw new Error('Unauthorized');
+  if (!epic.isEpic) throw new Error('Sub-quests can only be added to an epic');
+  if (epic.parentId != null) {
+    throw new Error('Sub-quests cannot be nested more than one level deep');
+  }
+
+  const last = await prisma.project.findFirst({
+    where: { parentId: epicId },
+    orderBy: { epicOrder: 'desc' },
+    select: { epicOrder: true },
+  });
+  const nextOrder = (last?.epicOrder ?? -1) + 1;
+
+  return prisma.project.create({
+    data: {
+      title,
+      userId,
+      parentId: epicId,
+      epicOrder: nextOrder,
+      recurrenceType: RecurrenceType.NONE,
+    },
+  });
+}
+
+export async function reorderSubQuest(
+  input: z.infer<typeof reorderSubQuestSchema>,
+): Promise<void> {
+  const userId = await requireUserId();
+
+  const parsed = reorderSubQuestSchema.safeParse(input);
+  if (!parsed.success) {
+    throw new Error(parsed.error.issues[0]?.message ?? 'Invalid input');
+  }
+
+  const { subQuestId, direction } = parsed.data;
+
+  const sub = await prisma.project.findUnique({
+    where: { id: subQuestId },
+    select: { userId: true, parentId: true },
+  });
+  if (!sub) throw new Error('Sub-quest not found');
+  if (sub.userId !== userId) throw new Error('Unauthorized');
+  if (sub.parentId == null) throw new Error('Not a sub-quest');
+
+  const siblings = await prisma.project.findMany({
+    where: { parentId: sub.parentId },
+    orderBy: { epicOrder: 'asc' },
+    select: { id: true, epicOrder: true },
+  });
+
+  const idx = siblings.findIndex((s) => s.id === subQuestId);
+  const swapIdx = direction === 'up' ? idx - 1 : idx + 1;
+  if (idx === -1 || swapIdx < 0 || swapIdx >= siblings.length) return; // no-op at the ends
+
+  const a = siblings[idx];
+  const b = siblings[swapIdx];
+  await prisma.$transaction([
+    prisma.project.update({ where: { id: a.id }, data: { epicOrder: b.epicOrder ?? swapIdx } }),
+    prisma.project.update({ where: { id: b.id }, data: { epicOrder: a.epicOrder ?? idx } }),
+  ]);
+}
+
+export async function updateEpicSettings(
+  input: z.infer<typeof updateEpicSettingsSchema>,
+): Promise<Project> {
+  const userId = await requireUserId();
+
+  const parsed = updateEpicSettingsSchema.safeParse(input);
+  if (!parsed.success) {
+    throw new Error(parsed.error.issues[0]?.message ?? 'Invalid input');
+  }
+
+  const { epicId, sequential } = parsed.data;
+
+  const epic = await prisma.project.findUnique({
+    where: { id: epicId },
+    select: { userId: true, isEpic: true },
+  });
+  if (!epic) throw new Error('Epic not found');
+  if (epic.userId !== userId) throw new Error('Unauthorized');
+  if (!epic.isEpic) throw new Error('Not an epic');
+
+  return prisma.project.update({
+    where: { id: epicId },
+    data: { sequential },
+  });
+}
+
 export async function toggleObjective(
   input: z.infer<typeof toggleObjectiveSchema>,
 ): Promise<Objective> {
@@ -313,6 +509,7 @@ export async function toggleObjective(
         select: {
           userId: true,
           id: true,
+          parentId: true,
         },
       },
     },
@@ -320,6 +517,15 @@ export async function toggleObjective(
 
   if (!objective) throw new Error('Objective not found');
   if (objective.project.userId !== userId) throw new Error('Unauthorized');
+
+  // Hard-lock guard: a sub-quest under a sequential epic can't be touched until
+  // its earlier siblings are complete.
+  if (
+    objective.project.parentId &&
+    (await isSubQuestLockedOnServer(objective.project.parentId, objective.project.id))
+  ) {
+    throw new Error('This sub-quest is locked until earlier sub-quests are complete');
+  }
 
   const updated = await prisma.objective.update({
     where: { id: objectiveId },

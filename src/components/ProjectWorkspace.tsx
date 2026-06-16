@@ -16,9 +16,20 @@ import {
   deleteObjective,
   renameInventoryItem,
   deleteInventoryItem,
+  createSubQuest,
+  reorderSubQuest,
+  updateEpicSettings,
+  deleteProject,
 } from '@/app/actions/projects';
 import type { ProjectWithRelations } from '@/app/actions/projects';
 import { recurrenceLabel, isMissed } from '@/lib/recurrence';
+import {
+  getChildren,
+  questProgress,
+  getQuestStatus,
+  lockedSubQuestIds,
+  isSubQuestLocked,
+} from '@/lib/quest';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Button } from '@/components/ui/button';
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
@@ -71,6 +82,8 @@ export default function ProjectWorkspace({ initialProjects, projectId }: Props) 
   const rollbackRenameItem = useProjectStore((s) => s.rollbackRenameInventoryItem);
   const optimisticDelItem = useProjectStore((s) => s.optimisticDeleteInventoryItem);
   const rollbackDelItem = useProjectStore((s) => s.rollbackDeleteInventoryItem);
+  const optimisticDeleteProj = useProjectStore((s) => s.optimisticDeleteProject);
+  const rollbackDeleteProj = useProjectStore((s) => s.rollbackDeleteProject);
 
   // ── Add forms ─────────────────────────────────────────────────────────────────
   const [newObjTitle, setNewObjTitle] = useState('');
@@ -119,6 +132,12 @@ export default function ProjectWorkspace({ initialProjects, projectId }: Props) 
   const [celebrate, setCelebrate] = useState<{ objId: string; nonce: number } | null>(null);
   const [questDone, setQuestDone] = useState<number | null>(null);
 
+  // ── Sub-quest (epic) management state ───────────────────────────────────────────
+  const [newSubQuestTitle, setNewSubQuestTitle] = useState('');
+  const [subQuestError, setSubQuestError] = useState<string | null>(null);
+  const [isAddingSubQuest, startAddSubQuest] = useTransition();
+  const [isMutatingEpic, startMutateEpic] = useTransition();
+
   useEffect(() => {
     hydrate(initialProjects);
   }, [hydrate, initialProjects]);
@@ -139,9 +158,19 @@ export default function ProjectWorkspace({ initialProjects, projectId }: Props) 
 
   if (!project) return null;
 
-  const total = project.objectives.length;
-  const done = project.objectives.filter((o) => o.isCompleted).length;
+  // ── Hierarchy: epic / sub-quest / standalone ────────────────────────────────────
+  const isEpic = project.isEpic;
+  const isSubQuest = project.parentId != null;
+  const parent = isSubQuest
+    ? allProjects.find((p) => p.id === project.parentId)
+    : undefined;
+  const locked = isSubQuest ? isSubQuestLocked(project, allProjects) : false;
+  const children = isEpic ? getChildren(project, allProjects) : [];
+  const lockedIds = isEpic ? lockedSubQuestIds(project, allProjects) : new Set<string>();
+
+  const { done, total } = questProgress(project, allProjects);
   const pct = total > 0 ? Math.round((done / total) * 100) : 0;
+  const progressUnit = isEpic ? 'sub-quest' : 'objective';
 
   const missed = isMissed(
     {
@@ -160,6 +189,7 @@ export default function ProjectWorkspace({ initialProjects, projectId }: Props) 
   // ── Handlers: toggle objective + gather item ──────────────────────────────────
 
   async function handleToggle(objectiveId: string) {
+    if (locked) return; // sub-quest locked behind earlier siblings
     const prev = optimisticToggle(objectiveId);
 
     // Only celebrate when an objective transitions into completion.
@@ -416,6 +446,57 @@ export default function ProjectWorkspace({ initialProjects, projectId }: Props) 
     });
   }
 
+  // ── Handlers: epic / sub-quests ───────────────────────────────────────────────
+
+  function handleAddSubQuest(e: React.FormEvent<HTMLFormElement>) {
+    e.preventDefault();
+    setSubQuestError(null);
+    const title = newSubQuestTitle.trim();
+    if (!title) { setSubQuestError('Title is required'); return; }
+    startAddSubQuest(async () => {
+      try {
+        await createSubQuest({ epicId: projectId, title });
+        setNewSubQuestTitle('');
+        router.refresh();
+      } catch (err) {
+        setSubQuestError(err instanceof Error ? err.message : 'Failed to add sub-quest');
+      }
+    });
+  }
+
+  function handleReorderSubQuest(subQuestId: string, direction: 'up' | 'down') {
+    startMutateEpic(async () => {
+      try {
+        await reorderSubQuest({ subQuestId, direction });
+        router.refresh();
+      } catch {
+        /* best-effort reorder; refresh will resync on next load */
+      }
+    });
+  }
+
+  function handleToggleSequential(next: boolean) {
+    startMutateEpic(async () => {
+      try {
+        await updateEpicSettings({ epicId: projectId, sequential: next });
+        router.refresh();
+      } catch (err) {
+        setSubQuestError(err instanceof Error ? err.message : 'Failed to update setting');
+      }
+    });
+  }
+
+  async function handleDeleteSubQuest(subQuestId: string, subTitle: string) {
+    if (!window.confirm(`Delete sub-quest "${subTitle}"? This cannot be undone.`)) return;
+    const saved = optimisticDeleteProj(subQuestId);
+    try {
+      await deleteProject({ projectId: subQuestId });
+      router.refresh();
+    } catch {
+      if (saved) rollbackDeleteProj(saved);
+    }
+  }
+
   // ── Render ────────────────────────────────────────────────────────────────────
 
   return (
@@ -424,12 +505,21 @@ export default function ProjectWorkspace({ initialProjects, projectId }: Props) 
       <div className="relative">
         {questDone != null && <QuestCompleteEffect key={questDone} />}
         <div className="flex items-center justify-between mb-5">
-          <Link
-            href="/"
-            className="text-sm text-zinc-400 hover:text-indigo-400 transition-colors inline-flex items-center gap-1"
-          >
-            <span aria-hidden>←</span> Dashboard
-          </Link>
+          {parent ? (
+            <Link
+              href={`/projects/${parent.id}`}
+              className="text-sm text-zinc-400 hover:text-indigo-400 transition-colors inline-flex items-center gap-1"
+            >
+              <span aria-hidden>←</span> {parent.title}
+            </Link>
+          ) : (
+            <Link
+              href="/"
+              className="text-sm text-zinc-400 hover:text-indigo-400 transition-colors inline-flex items-center gap-1"
+            >
+              <span aria-hidden>←</span> Dashboard
+            </Link>
+          )}
           <LogoutButton />
         </div>
 
@@ -477,9 +567,19 @@ export default function ProjectWorkspace({ initialProjects, projectId }: Props) 
           </div>
         )}
 
-        {/* Recurrence + missed badges */}
-        {(label || missed) && (
+        {/* Epic / recurrence / missed badges */}
+        {(label || missed || isEpic || isSubQuest) && (
           <div className="flex flex-wrap gap-1.5 mt-2">
+            {isEpic && (
+              <span className="inline-flex items-center rounded-md bg-amber-950/40 border border-amber-500/40 px-2 py-0.5 text-xs font-medium text-amber-300">
+                ⚔ Epic{project.sequential ? ' · in order' : ''}
+              </span>
+            )}
+            {isSubQuest && (
+              <span className="inline-flex items-center rounded-md bg-indigo-950/40 border border-indigo-500/40 px-2 py-0.5 text-xs font-medium text-indigo-300">
+                Sub-quest
+              </span>
+            )}
             {label && (
               <span className="inline-flex items-center rounded-md bg-zinc-800 px-2 py-0.5 text-xs font-medium text-zinc-300">
                 {label}
@@ -490,6 +590,12 @@ export default function ProjectWorkspace({ initialProjects, projectId }: Props) 
                 ⚠ Missed
               </span>
             )}
+          </div>
+        )}
+
+        {locked && (
+          <div className="mt-3 rounded-lg border border-amber-500/40 bg-amber-950/30 px-3 py-2 text-sm text-amber-200">
+            🔒 Locked — finish the earlier sub-quests first.
           </div>
         )}
 
@@ -527,7 +633,7 @@ export default function ProjectWorkspace({ initialProjects, projectId }: Props) 
         <div className="mt-5 space-y-1.5">
           <div className="flex justify-between text-xs text-zinc-400">
             <span>
-              {done}/{total} objective{total !== 1 ? 's' : ''} completed
+              {done}/{total} {progressUnit}{total !== 1 ? 's' : ''} completed
             </span>
             <span className="font-medium text-zinc-300">{pct}%</span>
           </div>
@@ -535,7 +641,130 @@ export default function ProjectWorkspace({ initialProjects, projectId }: Props) 
         </div>
       </div>
 
+      {/* Sub-quests (epic only) */}
+      {isEpic && (
+        <Card>
+          <CardHeader>
+            <CardTitle>Sub-quests</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <label className="flex items-center gap-2.5 mb-4 cursor-pointer">
+              <Checkbox
+                checked={project.sequential}
+                onCheckedChange={(c) => handleToggleSequential(c)}
+                disabled={isMutatingEpic}
+                aria-label="Sub-quests must be done in order"
+              />
+              <span className="text-sm text-zinc-300">
+                Must be done in order
+                <span className="text-zinc-500"> — later sub-quests lock 🔒 until earlier ones finish</span>
+              </span>
+            </label>
+
+            {children.length === 0 ? (
+              <p className="text-sm text-zinc-500">No sub-quests yet.</p>
+            ) : (
+              <ul className="space-y-2">
+                {children.map((child, index) => {
+                  const cp = questProgress(child, allProjects);
+                  const childStatus = getQuestStatus(child, allProjects);
+                  const childLocked = lockedIds.has(child.id);
+                  const statusIcon = childLocked
+                    ? '🔒'
+                    : childStatus === 'completed'
+                      ? '✓'
+                      : '▶';
+                  return (
+                    <li
+                      key={child.id}
+                      className="flex items-center gap-2 rounded-lg border border-zinc-800 bg-zinc-900/40 px-3 py-2.5 group"
+                    >
+                      <span className="text-xs text-zinc-500 w-4 text-right tabular-nums">
+                        {index + 1}
+                      </span>
+                      <span
+                        className={cn(
+                          'text-sm flex-shrink-0',
+                          childLocked ? 'opacity-60' : '',
+                          childStatus === 'completed' ? 'text-emerald-400' : 'text-zinc-400',
+                        )}
+                        aria-hidden
+                      >
+                        {statusIcon}
+                      </span>
+                      {childLocked ? (
+                        <span className="text-sm flex-1 min-w-0 truncate text-zinc-500">
+                          {child.title}
+                        </span>
+                      ) : (
+                        <Link
+                          href={`/projects/${child.id}`}
+                          className={cn(
+                            'text-sm flex-1 min-w-0 truncate hover:text-indigo-400 transition-colors',
+                            childStatus === 'completed' ? 'text-zinc-500 line-through' : 'text-zinc-200',
+                          )}
+                        >
+                          {child.title}
+                        </Link>
+                      )}
+                      <span className="text-xs text-zinc-500 tabular-nums shrink-0">
+                        {cp.done}/{cp.total}
+                      </span>
+                      <div className="flex items-center gap-0.5 shrink-0">
+                        <button
+                          onClick={() => handleReorderSubQuest(child.id, 'up')}
+                          disabled={index === 0 || isMutatingEpic}
+                          aria-label={`Move "${child.title}" up`}
+                          className="text-zinc-500 hover:text-indigo-400 disabled:opacity-30 disabled:hover:text-zinc-500 transition-colors px-1 text-sm"
+                        >
+                          ↑
+                        </button>
+                        <button
+                          onClick={() => handleReorderSubQuest(child.id, 'down')}
+                          disabled={index === children.length - 1 || isMutatingEpic}
+                          aria-label={`Move "${child.title}" down`}
+                          className="text-zinc-500 hover:text-indigo-400 disabled:opacity-30 disabled:hover:text-zinc-500 transition-colors px-1 text-sm"
+                        >
+                          ↓
+                        </button>
+                        <button
+                          onClick={() => handleDeleteSubQuest(child.id, child.title)}
+                          aria-label={`Delete "${child.title}"`}
+                          className="opacity-0 group-hover:opacity-100 text-zinc-500 hover:text-red-400 transition-all px-1 text-sm"
+                        >
+                          ✕
+                        </button>
+                      </div>
+                    </li>
+                  );
+                })}
+              </ul>
+            )}
+
+            <form
+              onSubmit={handleAddSubQuest}
+              className="mt-5 pt-4 border-t border-zinc-800/80 space-y-2"
+            >
+              <div className="flex gap-2">
+                <input
+                  type="text"
+                  value={newSubQuestTitle}
+                  onChange={(e) => setNewSubQuestTitle(e.target.value)}
+                  placeholder="Add a sub-quest…"
+                  className="field flex-1"
+                />
+                <Button type="submit" disabled={isAddingSubQuest}>
+                  {isAddingSubQuest ? 'Adding…' : 'Add'}
+                </Button>
+              </div>
+              {subQuestError && <p className="text-sm text-red-400">{subQuestError}</p>}
+            </form>
+          </CardContent>
+        </Card>
+      )}
+
       {/* Objectives */}
+      {!isEpic && (
       <Card>
         <CardHeader>
           <CardTitle>Objectives</CardTitle>
@@ -585,6 +814,7 @@ export default function ProjectWorkspace({ initialProjects, projectId }: Props) 
                         <Checkbox
                           checked={obj.isCompleted}
                           onCheckedChange={() => handleToggle(obj.id)}
+                          disabled={locked}
                           className={cn(isCelebrating && 'animate-check-pop')}
                         />
                         {isCelebrating && <SparkleBurst key={celebrate.nonce} />}
@@ -649,8 +879,10 @@ export default function ProjectWorkspace({ initialProjects, projectId }: Props) 
           </form>
         </CardContent>
       </Card>
+      )}
 
-      {/* Schedule */}
+      {/* Schedule (standalone quests only — epics & sub-quests are non-recurring) */}
+      {!isEpic && !isSubQuest && (
       <Card>
         <CardHeader>
           <CardTitle>Schedule</CardTitle>
@@ -791,8 +1023,10 @@ export default function ProjectWorkspace({ initialProjects, projectId }: Props) 
           </Button>
         </CardContent>
       </Card>
+      )}
 
-      {/* Inventory */}
+      {/* Inventory (not for epics) */}
+      {!isEpic && (
       <Card>
         <CardHeader>
           <CardTitle>Inventory</CardTitle>
@@ -897,6 +1131,7 @@ export default function ProjectWorkspace({ initialProjects, projectId }: Props) 
           </form>
         </CardContent>
       </Card>
+      )}
     </main>
   );
 }
