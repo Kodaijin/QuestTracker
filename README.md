@@ -85,13 +85,16 @@ npm run dev
 | `POSTGRES_PASSWORD`| Postgres password (used by the Docker DB service)                 |
 | `POSTGRES_DB`     | Postgres database name (used by the Docker DB service)             |
 | `NEXTAUTH_SECRET` | Secret used to sign NextAuth sessions — **change this**            |
-| `NEXTAUTH_URL`    | Base URL of the app (e.g. `http://localhost:3000`)                 |
+| `NEXTAUTH_URL`    | Public base URL of the app (e.g. `https://quests.example.com`). Behind a proxy, set this to your real domain — not `localhost` |
+| `ALLOWED_ORIGINS` | Comma-separated public origin host(s) allowed to invoke Server Actions. **Required behind a reverse proxy / Cloudflare Tunnel** (host only, no protocol). `NEXTAUTH_URL`'s host is trusted automatically |
 | `TZ`              | Timezone for quest reset / day-boundary logic (e.g. `Etc/GMT+8`)   |
 | `VAPID_PUBLIC_KEY` / `VAPID_PRIVATE_KEY` | Web Push keypair for reminders. Generate with `npx web-push generate-vapid-keys --json` |
 | `VAPID_SUBJECT`   | Contact for the push service, a `mailto:` or URL                   |
 | `REMINDER_SWEEP_MINUTES` | How often the reminder scheduler runs, in minutes (`0` disables it; default `15`) |
 
 See `.env.example` for a complete template. **Note:** web push requires HTTPS in production (localhost is exempt for development).
+
+> **Running behind a reverse proxy or Cloudflare Tunnel?** Next.js validates that a Server Action's `Origin` matches the forwarded `Host`; a proxy that rewrites the `Host` (e.g. to `localhost:3000`) breaks this and every mutation returns **500**. Set `ALLOWED_ORIGINS` (and `NEXTAUTH_URL`) to your public domain. Because the standalone server bakes this into the build, it's passed as a Docker **build arg** — rebuild with `docker compose up -d --build` after changing it.
 
 ## Scripts
 
@@ -122,6 +125,10 @@ See `.env.example` for a complete template. **Note:** web push requires HTTPS in
 - **NotificationPreference** — per-user reminder toggles and the daily reminder hour
 
 ## Changelog
+
+### 2026-06-17 — Reverse-proxy / Cloudflare Tunnel support
+
+- **`ALLOWED_ORIGINS`** env var feeding Next's `serverActions.allowedOrigins`, so mutations no longer return 500 when the proxy forwards a `Host` that differs from the browser `Origin`. Passed as a Docker build arg (baked into the standalone build); `NEXTAUTH_URL`'s host is trusted automatically
 
 ### 2026-06-17 — Remove allies
 

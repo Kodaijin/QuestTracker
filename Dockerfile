@@ -32,6 +32,14 @@ RUN apk add --no-cache openssl
 # Generate Prisma client for the linux-musl-openssl-3.0.x target.
 RUN npx prisma generate
 
+# Public origin(s) for Next's Server Actions check (baked into the standalone
+# build, since the standalone server reads a serialized config, not next.config.js
+# at runtime). Provided as build args by docker-compose.
+ARG ALLOWED_ORIGINS=""
+ARG NEXTAUTH_URL=""
+ENV ALLOWED_ORIGINS=$ALLOWED_ORIGINS
+ENV NEXTAUTH_URL=$NEXTAUTH_URL
+
 # Produces .next/standalone via next.config.js output: 'standalone'.
 RUN npx next build
 
