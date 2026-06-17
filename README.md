@@ -21,7 +21,8 @@ Built with Next.js (App Router), Prisma, PostgreSQL, and NextAuth — fully cont
 - **Achievements** — 50+ cheeky badges (including streak milestones) unlocked just by using the app, tracked per user and never revoked once earned
 - **Completion effects** — sparkle-and-glow feedback when you check an objective, and a golden "Quest Complete!" celebration when a quest is finished (respects `prefers-reduced-motion`)
 - **Recurring quests** — daily, weekly, every N weeks, monthly, or a specific date; elapsed quests advance automatically on load
-- **Authentication** — email/password accounts via NextAuth, with a security-question password reset flow
+- **Party & group quests** (`/party`) — add allies by unique username (they accept or decline), then share a quest with chosen allies when you create it. Invited heroes accept the quest per-invite; once joined, the party shares the same progress and **every member earns XP** when it's completed. A notice badge in the nav surfaces pending ally requests and quest invites
+- **Authentication** — email/password accounts via NextAuth, each with a unique username for party invites and a security-question password reset flow
 - **Custom icons** — upload and auto-resize quest icons
 
 ## Tech Stack
@@ -102,14 +103,23 @@ See `.env.example` for a complete template.
 
 ## Data Model
 
-- **User** — owns many projects, completion events, and unlocked achievements; stores credentials and an optional security question
+- **User** — owns many projects, completion events, and unlocked achievements; stores credentials, a unique `username` (used for party invites), and an optional security question
 - **Project (Quest)** — title, description, icon, `difficulty`, `tags`, recurrence settings, and due/completion dates. An Epic is a Project with `isEpic`; its sub-quests are Projects pointing back via `parentId` (with `epicOrder` for sequencing and a `sequential` flag on the Epic)
 - **Objective** — ordered, completable sub-tasks belonging to a quest
 - **InventoryItem** — named items belonging to a quest, each with a `gathered` checkbox state
 - **CompletionEvent** — an append-only log of every objective/item/quest completion (with awarded XP and timestamp); the source of truth for XP, levels, streaks, and insights
 - **UnlockedAchievement** — records which achievement a user has earned and when (unique per user + achievement key)
+- **Connection** — a hero-to-hero ally link between a requester and addressee, with a pending/accepted/declined status (one per pair)
+- **QuestMember** — a per-quest invite linking a quest to an invited user (the owner stays `Project.userId`), with a pending/accepted/declined status; accepted members share progress and earn XP
 
 ## Changelog
+
+### 2026-06-17 — Party & group quests
+
+- **Party & group quests** — invite allies by unique username (accept/decline), then share quests with chosen allies who accept per-quest; shared quests have shared progress and award XP to **every** member on completion
+- **Party page** (`/party`) collecting incoming ally requests and quest invites, with a pending-notice badge across the nav
+- **Usernames** — required at registration and changeable in account settings
+- New `Connection` and `QuestMember` models
 
 ### 2026-06-16 — Progression & planning update
 
