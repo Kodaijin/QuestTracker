@@ -21,7 +21,7 @@ Built with Next.js (App Router), Prisma, PostgreSQL, and NextAuth — fully cont
 - **Achievements** — 50+ cheeky badges (including streak milestones) unlocked just by using the app, tracked per user and never revoked once earned
 - **Completion effects** — sparkle-and-glow feedback when you check an objective, and a golden "Quest Complete!" celebration when a quest is finished (respects `prefers-reduced-motion`)
 - **Recurring quests** — daily, weekly, every N weeks, monthly, or a specific date; elapsed quests advance automatically on load
-- **Party & group quests** (`/party`) — add allies by unique username (they accept or decline), then share a quest with chosen allies when you create it. Invited heroes accept the quest per-invite; once joined, the party shares the same progress and **every member earns XP** when it's completed. A notice badge in the nav surfaces pending ally requests and quest invites
+- **Party & group quests** (`/party`) — add allies by unique username (they accept or decline), then share a quest with chosen allies when you create it. Invited heroes accept the quest per-invite; once joined, the party shares the same progress and **every member earns XP** when it's completed. Either ally can **remove** the other at any time, which also severs their shared-quest memberships in both directions. A notice badge in the nav surfaces pending ally requests and quest invites
 - **Companion pet** — adopt a companion (dragon, fox spirit, or slime) on your hero page that **evolves as you level up** (Egg → Hatchling → Juvenile → Adult → Mythic) and reacts to your streak with a mood; evolutions get their own celebration
 - **Reminders** (`/notifications`) — opt-in **web push** notifications (delivered even when the app is closed) plus an in-app alert center for come-back nudges, streak-at-risk warnings, approaching quest deadlines, and a "your companion misses you" poke. Per-type toggles and a daily reminder time live in Settings
 - **Authentication** — email/password accounts via NextAuth, each with a unique username for party invites and a security-question password reset flow
@@ -122,6 +122,10 @@ See `.env.example` for a complete template. **Note:** web push requires HTTPS in
 - **NotificationPreference** — per-user reminder toggles and the daily reminder hour
 
 ## Changelog
+
+### 2026-06-17 — Remove allies
+
+- **Remove party members** — either ally can remove the other from the Party page (`/party`); removal also deletes their shared-quest memberships in both directions, fully disconnecting the two heroes
 
 ### 2026-06-17 — Companion pet & reminders
 

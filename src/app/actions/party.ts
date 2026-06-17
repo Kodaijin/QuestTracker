@@ -110,6 +110,46 @@ export async function sendConnectionRequest(input: {
   }
 }
 
+const removeAllySchema = z.object({
+  connectionId: z.string().min(1),
+});
+
+/**
+ * Sever an accepted alliance. Removes the connection and, in both directions,
+ * any quest memberships that exist purely because of it (the other hero on your
+ * quests, and you on theirs), so a falling-out fully disconnects the two heroes.
+ */
+export async function removeAlly(input: {
+  connectionId: string;
+}): Promise<PartyActionResult> {
+  const parsed = removeAllySchema.safeParse(input);
+  if (!parsed.success) {
+    return { ok: false, error: parsed.error.issues[0]?.message ?? 'Invalid input' };
+  }
+
+  const userId = await requireUserId();
+  const { connectionId } = parsed.data;
+
+  const connection = await prisma.connection.findUnique({ where: { id: connectionId } });
+  if (!connection) return { ok: false, error: 'Ally not found.' };
+  if (connection.requesterId !== userId && connection.addresseeId !== userId) {
+    return { ok: false, error: 'Not your alliance to remove.' };
+  }
+
+  const otherId =
+    connection.requesterId === userId ? connection.addresseeId : connection.requesterId;
+
+  await prisma.$transaction([
+    // The other hero's membership in quests you own.
+    prisma.questMember.deleteMany({ where: { userId: otherId, project: { userId } } }),
+    // Your membership in quests they own.
+    prisma.questMember.deleteMany({ where: { userId, project: { userId: otherId } } }),
+    prisma.connection.delete({ where: { id: connectionId } }),
+  ]);
+
+  return { ok: true };
+}
+
 const respondConnectionSchema = z.object({
   connectionId: z.string().min(1),
   accept: z.boolean(),

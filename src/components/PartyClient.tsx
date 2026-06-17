@@ -9,6 +9,7 @@ import {
   sendConnectionRequest,
   respondToConnection,
   respondToQuestInvite,
+  removeAlly,
   type Ally,
   type IncomingRequest,
   type QuestInvite,
@@ -64,6 +65,23 @@ export default function PartyClient({
         setError(result.error);
         return;
       }
+      router.refresh();
+    });
+  }
+
+  function handleRemoveAlly(connectionId: string, label: string) {
+    if (!window.confirm(`Remove ${label} from your party? You'll also leave each other's shared quests.`)) {
+      return;
+    }
+    setError(null);
+    setSuccess(null);
+    startTransition(async () => {
+      const result = await removeAlly({ connectionId });
+      if (!result.ok) {
+        setError(result.error);
+        return;
+      }
+      setSuccess('Ally removed.');
       router.refresh();
     });
   }
@@ -260,9 +278,21 @@ export default function PartyClient({
                 {initialAllies.map((a) => (
                   <li
                     key={a.connectionId}
-                    className="inline-flex items-center rounded-lg border border-zinc-700 bg-zinc-800/60 px-3 py-1.5 text-sm text-zinc-200"
+                    className="inline-flex items-center gap-2 rounded-lg border border-zinc-700 bg-zinc-800/60 pl-3 pr-1.5 py-1.5 text-sm text-zinc-200"
                   >
-                    {heroLabel(a.username, a.name)}
+                    <span>{heroLabel(a.username, a.name)}</span>
+                    <button
+                      type="button"
+                      onClick={() => handleRemoveAlly(a.connectionId, heroLabel(a.username, a.name))}
+                      disabled={isPending}
+                      aria-label={`Remove ${heroLabel(a.username, a.name)}`}
+                      title="Remove ally"
+                      className="inline-flex h-5 w-5 items-center justify-center rounded-md text-zinc-500 hover:bg-red-950/60 hover:text-red-300 disabled:opacity-50 transition-colors"
+                    >
+                      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-3.5 h-3.5">
+                        <path d="M6.28 5.22a.75.75 0 00-1.06 1.06L8.94 10l-3.72 3.72a.75.75 0 101.06 1.06L10 11.06l3.72 3.72a.75.75 0 101.06-1.06L11.06 10l3.72-3.72a.75.75 0 00-1.06-1.06L10 8.94 6.28 5.22z" />
+                      </svg>
+                    </button>
                   </li>
                 ))}
               </ul>
