@@ -5,16 +5,31 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
 import PartyNavLink from '@/components/PartyNavLink';
+import NotificationBell from '@/components/NotificationBell';
 import {
   changeEmail,
   changeUsername,
   changePassword,
   changeSecurityQuestion,
 } from '@/app/actions/account';
+import {
+  saveNotificationPreferences,
+  type NotificationPrefs,
+} from '@/app/actions/notifications';
+import { subscribeToPush } from '@/lib/pushClient';
+import { cn } from '@/lib/utils';
+
+const REMINDER_TYPES: { key: 'inactivity' | 'streak' | 'deadline' | 'pet'; label: string; desc: string }[] = [
+  { key: 'inactivity', label: 'Come-back nudges', desc: "Remind me when I've been away for a couple of days" },
+  { key: 'streak', label: 'Streak at risk', desc: 'Warn me in the evening if my streak is about to break' },
+  { key: 'deadline', label: 'Quest deadlines', desc: 'Alert me when a quest is due soon or becomes active' },
+  { key: 'pet', label: 'Companion', desc: "Let my companion remind me when it's lonely" },
+];
 
 interface Props {
   currentEmail: string;
   currentUsername: string | null;
+  notificationPrefs: NotificationPrefs;
 }
 
 // ── Shared sub-components ─────────────────────────────────────────────────────
@@ -43,8 +58,44 @@ function SuccessBox({ message }: { message: string }) {
 
 // ── Main component ────────────────────────────────────────────────────────────
 
-export default function SettingsClient({ currentEmail, currentUsername }: Props) {
+export default function SettingsClient({
+  currentEmail,
+  currentUsername,
+  notificationPrefs,
+}: Props) {
   const router = useRouter();
+
+  // ── Notifications state ────────────────────────────────────────────────────────
+  const [prefs, setPrefs] = useState<NotificationPrefs>(notificationPrefs);
+  const [pushMessage, setPushMessage] = useState<{ ok: boolean; text: string } | null>(null);
+  const [prefsSuccess, setPrefsSuccess] = useState<string | null>(null);
+  const [pushPending, startPushTransition] = useTransition();
+  const [prefsPending, startPrefsTransition] = useTransition();
+
+  function setPref<K extends keyof NotificationPrefs>(key: K, value: NotificationPrefs[K]) {
+    setPrefs((p) => ({ ...p, [key]: value }));
+    setPrefsSuccess(null);
+  }
+
+  function handleEnablePush() {
+    setPushMessage(null);
+    startPushTransition(async () => {
+      const result = await subscribeToPush();
+      setPushMessage(
+        result.ok
+          ? { ok: true, text: 'Push enabled on this device.' }
+          : { ok: false, text: result.error },
+      );
+    });
+  }
+
+  function handleSavePrefs() {
+    setPrefsSuccess(null);
+    startPrefsTransition(async () => {
+      const result = await saveNotificationPreferences(prefs);
+      if (result.ok) setPrefsSuccess('Notification preferences saved.');
+    });
+  }
 
   // ── Change email state ───────────────────────────────────────────────────────
   const [displayedEmail, setDisplayedEmail] = useState(currentEmail);
@@ -196,7 +247,10 @@ export default function SettingsClient({ currentEmail, currentUsername }: Props)
           </svg>
           Dashboard
         </Link>
-        <PartyNavLink />
+        <div className="flex items-center gap-4">
+          <NotificationBell />
+          <PartyNavLink />
+        </div>
       </div>
 
       <h1 className="text-3xl font-bold tracking-tight text-zinc-50 mb-8">
@@ -204,6 +258,99 @@ export default function SettingsClient({ currentEmail, currentUsername }: Props)
       </h1>
 
       <div className="space-y-6">
+        {/* ── Notifications ─────────────────────────────────────────────────── */}
+        <Card>
+          <CardHeader>
+            <CardTitle>Notifications</CardTitle>
+            <p className="text-sm text-zinc-400">
+              Reminders to keep your streak, quests, and companion on track.
+            </p>
+          </CardHeader>
+          <CardContent className="pt-6 space-y-5">
+            {/* Enable push on this device */}
+            <div className="flex items-center justify-between gap-3">
+              <div>
+                <p className="text-sm font-medium text-zinc-200">Browser push</p>
+                <p className="text-xs text-zinc-500">
+                  Enable notifications on this device — they arrive even when the app is closed.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={handleEnablePush}
+                disabled={pushPending}
+                className="flex-shrink-0 rounded-lg border border-indigo-500/50 bg-indigo-950/40 hover:bg-indigo-900/40 text-indigo-200 text-sm font-medium px-4 py-2 transition-all disabled:opacity-60"
+              >
+                {pushPending ? 'Enabling…' : 'Enable push'}
+              </button>
+            </div>
+            {pushMessage &&
+              (pushMessage.ok ? (
+                <SuccessBox message={pushMessage.text} />
+              ) : (
+                <ErrorBox message={pushMessage.text} />
+              ))}
+
+            <div className="h-px bg-zinc-800" />
+
+            {/* Master switch */}
+            <label className="flex items-center justify-between gap-3 cursor-pointer">
+              <span className="text-sm font-medium text-zinc-200">Reminders enabled</span>
+              <input
+                type="checkbox"
+                checked={prefs.enabled}
+                onChange={(e) => setPref('enabled', e.target.checked)}
+                className="h-4 w-4 accent-indigo-500"
+              />
+            </label>
+
+            {/* Per-type toggles + reminder time */}
+            <div className={cn('space-y-3', !prefs.enabled && 'opacity-50 pointer-events-none')}>
+              {REMINDER_TYPES.map((t) => (
+                <label key={t.key} className="flex items-center justify-between gap-3 cursor-pointer">
+                  <span>
+                    <span className="block text-sm text-zinc-200">{t.label}</span>
+                    <span className="block text-xs text-zinc-500">{t.desc}</span>
+                  </span>
+                  <input
+                    type="checkbox"
+                    checked={prefs[t.key]}
+                    onChange={(e) => setPref(t.key, e.target.checked)}
+                    className="h-4 w-4 accent-indigo-500 flex-shrink-0"
+                  />
+                </label>
+              ))}
+
+              <div className="flex items-center justify-between gap-3">
+                <span className="text-sm text-zinc-200">Daily reminder time</span>
+                <select
+                  value={prefs.reminderHour}
+                  onChange={(e) => setPref('reminderHour', Number(e.target.value))}
+                  className="field max-w-[8rem]"
+                  aria-label="Daily reminder time"
+                >
+                  {Array.from({ length: 24 }, (_, h) => (
+                    <option key={h} value={h}>
+                      {String(h).padStart(2, '0')}:00
+                    </option>
+                  ))}
+                </select>
+              </div>
+            </div>
+
+            {prefsSuccess && <SuccessBox message={prefsSuccess} />}
+
+            <button
+              type="button"
+              onClick={handleSavePrefs}
+              disabled={prefsPending}
+              className="rounded-lg bg-gradient-to-b from-indigo-500 to-indigo-600 hover:from-indigo-400 hover:to-indigo-500 shadow-lg shadow-indigo-600/25 disabled:opacity-60 disabled:cursor-not-allowed text-white text-sm font-medium px-5 py-2.5 transition-all"
+            >
+              {prefsPending ? 'Saving…' : 'Save preferences'}
+            </button>
+          </CardContent>
+        </Card>
+
         {/* ── Change email ──────────────────────────────────────────────────── */}
         <Card>
           <CardHeader>

@@ -11,6 +11,7 @@ import { isUpcoming, deadlineCountdown } from '@/lib/timing';
 import { Progress } from '@/components/ui/progress';
 import LogoutButton from '@/components/LogoutButton';
 import PartyNavLink from '@/components/PartyNavLink';
+import NotificationBell from '@/components/NotificationBell';
 import { cn } from '@/lib/utils';
 
 interface Props {
@@ -154,6 +155,7 @@ export default function TodayClient({ initialProjects }: Props) {
           <span aria-hidden>←</span> Dashboard
         </Link>
         <div className="flex items-center gap-4">
+          <NotificationBell />
           <PartyNavLink />
           <LogoutButton />
         </div>

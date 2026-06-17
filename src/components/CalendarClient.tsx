@@ -9,6 +9,7 @@ import { dayKey } from '@/lib/progression';
 import { difficultyMeta } from '@/lib/difficulty';
 import LogoutButton from '@/components/LogoutButton';
 import PartyNavLink from '@/components/PartyNavLink';
+import NotificationBell from '@/components/NotificationBell';
 import { cn } from '@/lib/utils';
 
 interface Props {
@@ -102,6 +103,7 @@ export default function CalendarClient({ initialProjects }: Props) {
           <span aria-hidden>←</span> Dashboard
         </Link>
         <div className="flex items-center gap-4">
+          <NotificationBell />
           <PartyNavLink />
           <LogoutButton />
         </div>

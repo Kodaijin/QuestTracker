@@ -144,3 +144,48 @@ export function LevelUpEffect({ level, title }: { level: number; title: string }
     </>
   );
 }
+
+/**
+ * The companion "evolution" celebration: an emerald sparkle shower plus a toast
+ * announcing the new stage. Mount keyed by a nonce so it remounts on each
+ * evolution; it auto-fades. Modeled on LevelUpEffect.
+ */
+export function PetEvolveEffect({ emoji, stageLabel }: { emoji: string; stageLabel: string }) {
+  const [particles] = useState<RiseParticle[]>(() =>
+    Array.from({ length: 24 }, () => ({
+      left: Math.random() * 100,
+      delay: Math.random() * 0.8,
+      size: 0.8 + Math.random() * 1.0,
+      char: RISE_CHARS[Math.floor(Math.random() * RISE_CHARS.length)],
+    })),
+  );
+
+  return (
+    <>
+      <span className="pointer-events-none fixed inset-0 z-40 overflow-hidden" aria-hidden>
+        {particles.map((p, i) => (
+          <span
+            key={i}
+            className="sparkle-rise-particle leading-none text-emerald-300"
+            style={{
+              left: `${p.left}%`,
+              fontSize: `${p.size}rem`,
+              animationDelay: `${p.delay}s`,
+            }}
+          >
+            {p.char}
+          </span>
+        ))}
+      </span>
+
+      <div
+        role="status"
+        className="animate-toast fixed left-1/2 top-6 z-50 flex flex-col items-center gap-0.5 rounded-2xl border border-emerald-400/60 bg-emerald-950/85 px-7 py-3 text-center shadow-glow backdrop-blur"
+      >
+        <span className="text-2xl leading-none" aria-hidden>{emoji}</span>
+        <span className="text-base font-bold text-emerald-200">Your companion evolved!</span>
+        <span className="text-xs font-medium text-emerald-300/90">Now a {stageLabel}</span>
+      </div>
+    </>
+  );
+}

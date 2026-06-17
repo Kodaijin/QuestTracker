@@ -22,6 +22,8 @@ Built with Next.js (App Router), Prisma, PostgreSQL, and NextAuth — fully cont
 - **Completion effects** — sparkle-and-glow feedback when you check an objective, and a golden "Quest Complete!" celebration when a quest is finished (respects `prefers-reduced-motion`)
 - **Recurring quests** — daily, weekly, every N weeks, monthly, or a specific date; elapsed quests advance automatically on load
 - **Party & group quests** (`/party`) — add allies by unique username (they accept or decline), then share a quest with chosen allies when you create it. Invited heroes accept the quest per-invite; once joined, the party shares the same progress and **every member earns XP** when it's completed. A notice badge in the nav surfaces pending ally requests and quest invites
+- **Companion pet** — adopt a companion (dragon, fox spirit, or slime) on your hero page that **evolves as you level up** (Egg → Hatchling → Juvenile → Adult → Mythic) and reacts to your streak with a mood; evolutions get their own celebration
+- **Reminders** (`/notifications`) — opt-in **web push** notifications (delivered even when the app is closed) plus an in-app alert center for come-back nudges, streak-at-risk warnings, approaching quest deadlines, and a "your companion misses you" poke. Per-type toggles and a daily reminder time live in Settings
 - **Authentication** — email/password accounts via NextAuth, each with a unique username for party invites and a security-question password reset flow
 - **Custom icons** — upload and auto-resize quest icons
 
@@ -85,8 +87,11 @@ npm run dev
 | `NEXTAUTH_SECRET` | Secret used to sign NextAuth sessions — **change this**            |
 | `NEXTAUTH_URL`    | Base URL of the app (e.g. `http://localhost:3000`)                 |
 | `TZ`              | Timezone for quest reset / day-boundary logic (e.g. `Etc/GMT+8`)   |
+| `VAPID_PUBLIC_KEY` / `VAPID_PRIVATE_KEY` | Web Push keypair for reminders. Generate with `npx web-push generate-vapid-keys --json` |
+| `VAPID_SUBJECT`   | Contact for the push service, a `mailto:` or URL                   |
+| `REMINDER_SWEEP_MINUTES` | How often the reminder scheduler runs, in minutes (`0` disables it; default `15`) |
 
-See `.env.example` for a complete template.
+See `.env.example` for a complete template. **Note:** web push requires HTTPS in production (localhost is exempt for development).
 
 ## Scripts
 
@@ -111,8 +116,19 @@ See `.env.example` for a complete template.
 - **UnlockedAchievement** — records which achievement a user has earned and when (unique per user + achievement key)
 - **Connection** — a hero-to-hero ally link between a requester and addressee, with a pending/accepted/declined status (one per pair)
 - **QuestMember** — a per-quest invite linking a quest to an invited user (the owner stays `Project.userId`), with a pending/accepted/declined status; accepted members share progress and earn XP
+- **Pet** — a user's companion (species + name); its stage and mood are derived at read time from level and streak, so nothing else is stored
+- **PushSubscription** — a browser Web Push endpoint registered by a user for notifications
+- **Notification** — in-app alert history and the source of truth for push de-duplication (unique per user + type + key)
+- **NotificationPreference** — per-user reminder toggles and the daily reminder hour
 
 ## Changelog
+
+### 2026-06-17 — Companion pet & reminders
+
+- **Companion pet** — adopt a dragon, fox spirit, or slime that evolves with your level and reacts to your streak, with an evolution celebration
+- **Reminders** — opt-in web push (works when the app is closed) plus an in-app alert center (`/notifications`) for come-back nudges, streak-at-risk, quest deadlines, and companion pokes; an in-process scheduler runs the sweep
+- **Notification settings** — enable push per device, toggle each reminder type, and set a daily reminder time
+- New `Pet`, `PushSubscription`, `Notification`, and `NotificationPreference` models
 
 ### 2026-06-17 — Party & group quests
 

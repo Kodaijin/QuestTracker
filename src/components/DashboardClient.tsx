@@ -18,6 +18,7 @@ import { Progress } from '@/components/ui/progress';
 import { cn } from '@/lib/utils';
 import IconPicker from '@/components/IconPicker';
 import LogoutButton from '@/components/LogoutButton';
+import NotificationBell from '@/components/NotificationBell';
 import CountUp from '@/components/CountUp';
 import ProgressionHeader from '@/components/ProgressionHeader';
 
@@ -558,6 +559,7 @@ export default function DashboardClient({
           >
             🏆 Achievements
           </Link>
+          <NotificationBell variant="pill" />
           <Link
             href="/party"
             className="relative inline-flex items-center rounded-lg border border-zinc-700 bg-zinc-800/60 hover:bg-zinc-700/70 text-zinc-300 hover:text-zinc-100 text-sm font-medium px-3 py-1.5 transition-all"

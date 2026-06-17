@@ -3,8 +3,10 @@
 import { useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import { getProgression, type Progression } from '@/app/actions/progression';
+import { getPetStatus, type PetStatus } from '@/app/actions/pet';
 import { dayKey } from '@/lib/progression';
-import { LevelUpEffect } from '@/components/QuestEffects';
+import { MOOD_META } from '@/lib/pet';
+import { LevelUpEffect, PetEvolveEffect } from '@/components/QuestEffects';
 import CountUp from '@/components/CountUp';
 
 interface Props {
@@ -24,6 +26,10 @@ export default function ProgressionHeader({ initial, refreshSignal = 0 }: Props)
   const [levelUpNonce, setLevelUpNonce] = useState(0);
   const prevLevel = useRef<number | null>(initial ? initial.level : null);
 
+  const [pet, setPet] = useState<PetStatus | null>(null);
+  const [petEvolveNonce, setPetEvolveNonce] = useState(0);
+  const prevStage = useRef<number | null>(null);
+
   useEffect(() => {
     let cancelled = false;
     getProgression()
@@ -38,6 +44,20 @@ export default function ProgressionHeader({ initial, refreshSignal = 0 }: Props)
       .catch(() => {
         /* unauthenticated or transient — header just stays as-is */
       });
+
+    getPetStatus()
+      .then((next) => {
+        if (cancelled) return;
+        if (next && prevStage.current != null && next.stage.index > prevStage.current) {
+          setPetEvolveNonce((n) => n + 1);
+        }
+        prevStage.current = next ? next.stage.index : null;
+        setPet(next);
+      })
+      .catch(() => {
+        /* no pet yet or transient — just don't show the companion chip */
+      });
+
     return () => {
       cancelled = true;
     };
@@ -94,6 +114,21 @@ export default function ProgressionHeader({ initial, refreshSignal = 0 }: Props)
           </div>
         </div>
 
+        {/* Companion */}
+        {pet && (
+          <div
+            className="flex flex-col items-center justify-center min-w-[3rem]"
+            title={`${pet.name} · ${pet.stage.label} · ${MOOD_META[pet.mood].label}`}
+          >
+            <span className="text-2xl leading-none" aria-hidden>
+              {pet.stage.emoji}
+            </span>
+            <span className="text-xs leading-none mt-0.5" aria-hidden>
+              {MOOD_META[pet.mood].icon}
+            </span>
+          </div>
+        )}
+
         {/* Streak flame */}
         <div
           className="flex flex-col items-center justify-center min-w-[3rem]"
@@ -114,6 +149,10 @@ export default function ProgressionHeader({ initial, refreshSignal = 0 }: Props)
 
       {levelUpNonce > 0 && (
         <LevelUpEffect key={levelUpNonce} level={prog.level} title={prog.title} />
+      )}
+
+      {petEvolveNonce > 0 && pet && (
+        <PetEvolveEffect key={petEvolveNonce} emoji={pet.stage.emoji} stageLabel={pet.stage.label} />
       )}
     </>
   );

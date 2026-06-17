@@ -52,6 +52,63 @@ model User {
   sentRequests         Connection[]           @relation("Requester")
   receivedRequests     Connection[]           @relation("Addressee")
   questMemberships     QuestMember[]
+  pet                  Pet?
+  pushSubscriptions    PushSubscription[]
+  notifications        Notification[]
+  notificationPreference NotificationPreference?
+}
+
+// A personal companion that evolves with the hero's level and reacts to streaks.
+// Only identity is stored; stage/mood are derived at read time (see src/lib/pet.ts).
+model Pet {
+  id        String   @id @default(cuid())
+  userId    String   @unique
+  name      String
+  species   String
+  createdAt DateTime @default(now())
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+// A Web Push subscription endpoint registered by a user's browser.
+model PushSubscription {
+  id        String   @id @default(cuid())
+  userId    String
+  endpoint  String   @unique
+  p256dh    String
+  auth      String
+  createdAt DateTime @default(now())
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+// In-app notification history; also the source of truth for push dedupe.
+model Notification {
+  id        String    @id @default(cuid())
+  userId    String
+  type      String
+  title     String
+  body      String
+  href      String?
+  dedupeKey String
+  readAt    DateTime?
+  createdAt DateTime  @default(now())
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, type, dedupeKey])
+  @@index([userId, createdAt])
+}
+
+// Per-user reminder preferences.
+model NotificationPreference {
+  userId       String  @id
+  enabled      Boolean @default(true)
+  inactivity   Boolean @default(true)
+  streak       Boolean @default(true)
+  deadline     Boolean @default(true)
+  pet          Boolean @default(true)
+  reminderHour Int     @default(18)
+  user         User    @relation(fields: [userId], references: [id], onDelete: Cascade)
 }
 
 // Persistent hero-to-hero connection (friend link). One row per ordered pair.

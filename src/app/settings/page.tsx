@@ -2,6 +2,7 @@ import { redirect } from 'next/navigation';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
 import { prisma } from '@/lib/prisma';
+import { getNotificationPreferences } from '@/app/actions/notifications';
 import SettingsClient from '@/components/SettingsClient';
 
 export default async function SettingsPage() {
@@ -21,5 +22,13 @@ export default async function SettingsPage() {
     redirect('/login');
   }
 
-  return <SettingsClient currentEmail={user.email} currentUsername={user.username} />;
+  const notificationPrefs = await getNotificationPreferences();
+
+  return (
+    <SettingsClient
+      currentEmail={user.email}
+      currentUsername={user.username}
+      notificationPrefs={notificationPrefs}
+    />
+  );
 }

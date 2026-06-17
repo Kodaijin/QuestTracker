@@ -3,10 +3,13 @@
 import Link from 'next/link';
 import type { Progression } from '@/app/actions/progression';
 import type { AchievementStatus } from '@/app/actions/achievements';
+import type { PetStatus } from '@/app/actions/pet';
 import type { QuestStats } from '@/lib/achievements';
 import { Card, CardContent } from '@/components/ui/card';
 import LogoutButton from '@/components/LogoutButton';
 import PartyNavLink from '@/components/PartyNavLink';
+import NotificationBell from '@/components/NotificationBell';
+import PetPanel from '@/components/PetPanel';
 import CountUp from '@/components/CountUp';
 import { cn } from '@/lib/utils';
 
@@ -14,6 +17,7 @@ interface Props {
   progression: Progression;
   achievements: AchievementStatus[];
   stats: QuestStats;
+  petStatus: PetStatus | null;
 }
 
 function StatTile({ label, value, accent }: { label: string; value: number; accent?: string }) {
@@ -27,7 +31,7 @@ function StatTile({ label, value, accent }: { label: string; value: number; acce
   );
 }
 
-export default function HeroClient({ progression, achievements, stats }: Props) {
+export default function HeroClient({ progression, achievements, stats, petStatus }: Props) {
   const xpPct =
     progression.xpForNextLevel > 0
       ? Math.min(100, Math.round((progression.xpIntoLevel / progression.xpForNextLevel) * 100))
@@ -49,6 +53,7 @@ export default function HeroClient({ progression, achievements, stats }: Props) 
           <span aria-hidden>←</span> Dashboard
         </Link>
         <div className="flex items-center gap-4">
+          <NotificationBell />
           <PartyNavLink />
           <LogoutButton />
         </div>
@@ -113,6 +118,9 @@ export default function HeroClient({ progression, achievements, stats }: Props) 
           </div>
         </CardContent>
       </Card>
+
+      {/* Companion */}
+      <PetPanel petStatus={petStatus} />
 
       {/* Lifetime stats */}
       <h2 className="text-sm font-semibold uppercase tracking-wide text-zinc-400 mb-3">
