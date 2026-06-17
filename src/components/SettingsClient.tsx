@@ -4,14 +4,17 @@ import { useState, useTransition } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
+import PartyNavLink from '@/components/PartyNavLink';
 import {
   changeEmail,
+  changeUsername,
   changePassword,
   changeSecurityQuestion,
 } from '@/app/actions/account';
 
 interface Props {
   currentEmail: string;
+  currentUsername: string | null;
 }
 
 // ── Shared sub-components ─────────────────────────────────────────────────────
@@ -40,7 +43,7 @@ function SuccessBox({ message }: { message: string }) {
 
 // ── Main component ────────────────────────────────────────────────────────────
 
-export default function SettingsClient({ currentEmail }: Props) {
+export default function SettingsClient({ currentEmail, currentUsername }: Props) {
   const router = useRouter();
 
   // ── Change email state ───────────────────────────────────────────────────────
@@ -50,6 +53,14 @@ export default function SettingsClient({ currentEmail }: Props) {
   const [emailError, setEmailError] = useState<string | null>(null);
   const [emailSuccess, setEmailSuccess] = useState<string | null>(null);
   const [emailPending, startEmailTransition] = useTransition();
+
+  // ── Change username state ──────────────────────────────────────────────────────
+  const [displayedUsername, setDisplayedUsername] = useState(currentUsername);
+  const [unNewUsername, setUnNewUsername] = useState('');
+  const [unCurrentPassword, setUnCurrentPassword] = useState('');
+  const [unError, setUnError] = useState<string | null>(null);
+  const [unSuccess, setUnSuccess] = useState<string | null>(null);
+  const [unPending, startUnTransition] = useTransition();
 
   // ── Change password state ────────────────────────────────────────────────────
   const [pwCurrentPassword, setPwCurrentPassword] = useState('');
@@ -88,6 +99,30 @@ export default function SettingsClient({ currentEmail }: Props) {
       setEmailNewEmail('');
       setEmailCurrentPassword('');
       setEmailSuccess('Email updated. Use your new email next time you sign in.');
+      router.refresh();
+    });
+  }
+
+  function handleUsernameSubmit(e: React.FormEvent<HTMLFormElement>) {
+    e.preventDefault();
+    setUnError(null);
+    setUnSuccess(null);
+
+    startUnTransition(async () => {
+      const result = await changeUsername({
+        currentPassword: unCurrentPassword,
+        newUsername: unNewUsername,
+      });
+
+      if (!result.ok) {
+        setUnError(result.error);
+        return;
+      }
+
+      setDisplayedUsername(unNewUsername.toLowerCase());
+      setUnNewUsername('');
+      setUnCurrentPassword('');
+      setUnSuccess('Username updated. Allies can now invite you with it.');
       router.refresh();
     });
   }
@@ -141,25 +176,28 @@ export default function SettingsClient({ currentEmail }: Props) {
 
   return (
     <main className="max-w-2xl mx-auto px-6 py-12">
-      {/* Back link */}
-      <Link
-        href="/"
-        className="inline-flex items-center gap-1.5 text-sm text-zinc-400 hover:text-zinc-200 mb-8 transition-colors"
-      >
-        <svg
-          xmlns="http://www.w3.org/2000/svg"
-          viewBox="0 0 20 20"
-          fill="currentColor"
-          className="w-4 h-4"
+      {/* Back link + Party */}
+      <div className="flex items-center justify-between mb-8">
+        <Link
+          href="/"
+          className="inline-flex items-center gap-1.5 text-sm text-zinc-400 hover:text-zinc-200 transition-colors"
         >
-          <path
-            fillRule="evenodd"
-            d="M17 10a.75.75 0 01-.75.75H5.612l4.158 3.96a.75.75 0 11-1.04 1.08l-5.5-5.25a.75.75 0 010-1.08l5.5-5.25a.75.75 0 111.04 1.08L5.612 9.25H16.25A.75.75 0 0117 10z"
-            clipRule="evenodd"
-          />
-        </svg>
-        Dashboard
-      </Link>
+          <svg
+            xmlns="http://www.w3.org/2000/svg"
+            viewBox="0 0 20 20"
+            fill="currentColor"
+            className="w-4 h-4"
+          >
+            <path
+              fillRule="evenodd"
+              d="M17 10a.75.75 0 01-.75.75H5.612l4.158 3.96a.75.75 0 11-1.04 1.08l-5.5-5.25a.75.75 0 010-1.08l5.5-5.25a.75.75 0 111.04 1.08L5.612 9.25H16.25A.75.75 0 0117 10z"
+              clipRule="evenodd"
+            />
+          </svg>
+          Dashboard
+        </Link>
+        <PartyNavLink />
+      </div>
 
       <h1 className="text-3xl font-bold tracking-tight text-zinc-50 mb-8">
         Account settings
@@ -222,6 +260,79 @@ export default function SettingsClient({ currentEmail }: Props) {
                 className="rounded-lg bg-gradient-to-b from-indigo-500 to-indigo-600 hover:from-indigo-400 hover:to-indigo-500 shadow-lg shadow-indigo-600/25 disabled:opacity-60 disabled:cursor-not-allowed text-white text-sm font-medium px-5 py-2.5 transition-all"
               >
                 {emailPending ? 'Saving…' : 'Update email'}
+              </button>
+            </form>
+          </CardContent>
+        </Card>
+
+        {/* ── Change username ───────────────────────────────────────────────── */}
+        <Card>
+          <CardHeader>
+            <CardTitle>Change username</CardTitle>
+            <p className="text-sm text-zinc-400">
+              {displayedUsername ? (
+                <>
+                  Current username:{' '}
+                  <span className="text-zinc-200 font-medium">@{displayedUsername}</span>
+                </>
+              ) : (
+                <span className="text-amber-300">
+                  You don&apos;t have a username yet — set one so allies can invite you.
+                </span>
+              )}
+            </p>
+          </CardHeader>
+          <CardContent className="pt-6">
+            <form onSubmit={handleUsernameSubmit} className="space-y-4" noValidate>
+              <div>
+                <label
+                  htmlFor="username-new"
+                  className="block text-sm font-medium text-zinc-300 mb-1.5"
+                >
+                  New username
+                </label>
+                <input
+                  id="username-new"
+                  type="text"
+                  value={unNewUsername}
+                  onChange={(e) => setUnNewUsername(e.target.value)}
+                  autoComplete="username"
+                  minLength={3}
+                  maxLength={20}
+                  pattern="[a-zA-Z0-9_]+"
+                  required
+                  className="field"
+                />
+                <p className="mt-1 text-xs text-zinc-500">3–20 letters, numbers, or underscores.</p>
+              </div>
+
+              <div>
+                <label
+                  htmlFor="username-current-pw"
+                  className="block text-sm font-medium text-zinc-300 mb-1.5"
+                >
+                  Current password
+                </label>
+                <input
+                  id="username-current-pw"
+                  type="password"
+                  value={unCurrentPassword}
+                  onChange={(e) => setUnCurrentPassword(e.target.value)}
+                  autoComplete="current-password"
+                  required
+                  className="field"
+                />
+              </div>
+
+              {unError && <ErrorBox message={unError} />}
+              {unSuccess && <SuccessBox message={unSuccess} />}
+
+              <button
+                type="submit"
+                disabled={unPending}
+                className="rounded-lg bg-gradient-to-b from-indigo-500 to-indigo-600 hover:from-indigo-400 hover:to-indigo-500 shadow-lg shadow-indigo-600/25 disabled:opacity-60 disabled:cursor-not-allowed text-white text-sm font-medium px-5 py-2.5 transition-all"
+              >
+                {unPending ? 'Saving…' : 'Update username'}
               </button>
             </form>
           </CardContent>

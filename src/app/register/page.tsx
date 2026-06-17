@@ -19,12 +19,13 @@ export default function RegisterPage() {
 
     const email = data.get('email') as string;
     const password = data.get('password') as string;
+    const username = (data.get('username') as string).trim();
     const nameRaw = (data.get('name') as string).trim();
     const name = nameRaw || undefined;
     const securityQuestion = data.get('securityQuestion') as string;
     const securityAnswer = data.get('securityAnswer') as string;
 
-    const result = await registerUser({ email, password, name, securityQuestion, securityAnswer });
+    const result = await registerUser({ email, password, username, name, securityQuestion, securityAnswer });
 
     if (!result.ok) {
       setError(result.error);
@@ -60,6 +61,25 @@ export default function RegisterPage() {
               autoComplete="name"
               className="field"
             />
+          </div>
+
+          <div>
+            <label htmlFor="username" className="block text-sm font-medium text-zinc-300 mb-1.5">
+              Username
+            </label>
+            <input
+              id="username"
+              name="username"
+              type="text"
+              required
+              minLength={3}
+              maxLength={20}
+              pattern="[a-zA-Z0-9_]+"
+              autoComplete="username"
+              placeholder="dragonslayer"
+              className="field"
+            />
+            <p className="mt-1 text-xs text-zinc-500">3–20 letters, numbers, or underscores. Others use this to invite you to party quests.</p>
           </div>
 
           <div>

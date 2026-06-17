@@ -6,6 +6,7 @@ import type { Insights } from '@/app/actions/progression';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Progress } from '@/components/ui/progress';
 import LogoutButton from '@/components/LogoutButton';
+import PartyNavLink from '@/components/PartyNavLink';
 import CountUp from '@/components/CountUp';
 import { cn } from '@/lib/utils';
 
@@ -63,7 +64,10 @@ export default function InsightsClient({ insights }: Props) {
         >
           <span aria-hidden>←</span> Dashboard
         </Link>
-        <LogoutButton />
+        <div className="flex items-center gap-4">
+          <PartyNavLink />
+          <LogoutButton />
+        </div>
       </div>
 
       <div className="mb-8">

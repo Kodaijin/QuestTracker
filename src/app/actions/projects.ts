@@ -3,7 +3,7 @@
 import { getServerSession } from 'next-auth';
 import { z } from 'zod';
 import type { Project, Objective, InventoryItem } from '@prisma/client';
-import { Prisma, RecurrenceType, CompletionType, Difficulty } from '@prisma/client';
+import { Prisma, RecurrenceType, CompletionType, Difficulty, InviteStatus } from '@prisma/client';
 import { authOptions } from '@/lib/auth';
 import { prisma } from '@/lib/prisma';
 import {
@@ -49,6 +49,56 @@ async function requireUserId(): Promise<string> {
   const session = await getServerSession(authOptions);
   if (!session?.user?.id) throw new Error('Unauthorized');
   return session.user.id;
+}
+
+// ── Party / shared-quest helpers ─────────────────────────────────────────────
+//
+// A quest is owned by Project.userId, but may also be shared with accepted
+// QuestMembers (see party.ts). Owners may edit a quest's structure; owners AND
+// accepted members may check objectives/items off — and every participant earns
+// (or, on un-check, forfeits) the resulting XP.
+
+type QuestRole = 'owner' | 'member' | null;
+
+/** Resolve the caller's relationship to a quest: owner, accepted member, or neither. */
+async function getQuestRole(projectId: string, userId: string): Promise<QuestRole> {
+  const project = await prisma.project.findUnique({
+    where: { id: projectId },
+    select: { userId: true },
+  });
+  if (!project) return null;
+  if (project.userId === userId) return 'owner';
+
+  const membership = await prisma.questMember.findUnique({
+    where: { projectId_userId: { projectId, userId } },
+    select: { status: true },
+  });
+  return membership?.status === InviteStatus.ACCEPTED ? 'member' : null;
+}
+
+/** The owner plus every accepted member — i.e. who earns XP when the quest progresses. */
+async function acceptedParticipantIds(projectId: string): Promise<string[]> {
+  const project = await prisma.project.findUnique({
+    where: { id: projectId },
+    select: {
+      userId: true,
+      members: { where: { status: InviteStatus.ACCEPTED }, select: { userId: true } },
+    },
+  });
+  if (!project) return [];
+  return [project.userId, ...project.members.map((m) => m.userId)];
+}
+
+/** Ids of the user's accepted connections (allies), usable as quest invitees. */
+async function acceptedAllyIds(userId: string): Promise<Set<string>> {
+  const connections = await prisma.connection.findMany({
+    where: {
+      status: InviteStatus.ACCEPTED,
+      OR: [{ requesterId: userId }, { addresseeId: userId }],
+    },
+    select: { requesterId: true, addresseeId: true },
+  });
+  return new Set(connections.map((c) => (c.requesterId === userId ? c.addresseeId : c.requesterId)));
 }
 
 /**
@@ -234,6 +284,8 @@ const createProjectSchema = z
       .array(z.string().trim().min(1))
       .optional()
       .default([]),
+    // Accepted-ally user ids to share this quest with (non-epic quests only).
+    memberIds: z.array(z.string().min(1)).optional().default([]),
   })
   .merge(recurrenceSchema);
 
@@ -296,9 +348,15 @@ const toggleInventoryItemSchema = z.object({
 
 // ── Shared return type for getProjectsForUser ──────────────────────────────────
 
+export type QuestMemberWithUser = Prisma.QuestMemberGetPayload<{
+  include: { user: { select: { id: true; username: true; name: true } } };
+}>;
+
+// `members` is only populated by getProjectsForUser (party-aware queries);
+// computation helpers and other pages omit it, so it is optional.
 export type ProjectWithRelations = Prisma.ProjectGetPayload<{
   include: { objectives: true; inventoryItems: true };
-}>;
+}> & { members?: QuestMemberWithUser[] };
 
 // ── Actions ────────────────────────────────────────────────────────────────────
 
@@ -325,6 +383,7 @@ export async function createProject(
     isEpic,
     sequential,
     subQuests,
+    memberIds,
     ...recInput
   } = parsed.data;
 
@@ -364,6 +423,12 @@ export async function createProject(
 
   const recFields = normaliseRecurrence(recInput);
 
+  // Share with chosen allies (accepted connections only) as pending invites.
+  const allyIds = memberIds.length > 0 ? await acceptedAllyIds(userId) : new Set<string>();
+  const validMemberIds = Array.from(
+    new Set(memberIds.filter((id) => id !== userId && allyIds.has(id))),
+  );
+
   return prisma.project.create({
     data: {
       title,
@@ -389,6 +454,12 @@ export async function createProject(
       },
       inventoryItems: {
         create: inventoryItems.map((name) => ({ name, gathered: false })),
+      },
+      members: {
+        create: validMemberIds.map((memberId) => ({
+          userId: memberId,
+          status: InviteStatus.PENDING,
+        })),
       },
     },
   });
@@ -584,7 +655,10 @@ export async function toggleObjective(
   });
 
   if (!objective) throw new Error('Objective not found');
-  if (objective.project.userId !== userId) throw new Error('Unauthorized');
+  // Owner or accepted member may check objectives off (shared progress).
+  if ((await getQuestRole(objective.project.id, userId)) === null) {
+    throw new Error('Unauthorized');
+  }
 
   // Hard-lock guard: a sub-quest under a sequential epic can't be touched until
   // its earlier siblings are complete.
@@ -612,16 +686,23 @@ export async function toggleObjective(
   const wasComplete =
     !updated.isCompleted && sibs.filter((o) => o.id !== objectiveId).every((o) => o.isCompleted);
 
+  // Shared quests credit/claw-back XP for every participant (owner + accepted members).
+  const participantIds = await acceptedParticipantIds(projectId);
+
   if (updated.isCompleted) {
-    await recordCompletionEvent(userId, CompletionType.OBJECTIVE, projectId, objectiveXp());
+    for (const pid of participantIds) {
+      await recordCompletionEvent(pid, CompletionType.OBJECTIVE, projectId, objectiveXp());
+    }
     // Quest just became complete → award the (difficulty-scaled) quest bonus.
     if (nowComplete) {
-      await recordCompletionEvent(
-        userId,
-        CompletionType.QUEST,
-        projectId,
-        questXp(objective.project.difficulty),
-      );
+      for (const pid of participantIds) {
+        await recordCompletionEvent(
+          pid,
+          CompletionType.QUEST,
+          projectId,
+          questXp(objective.project.difficulty),
+        );
+      }
       // Record the completion timestamp (set, never cleared).
       await prisma.project.update({
         where: { id: projectId },
@@ -629,10 +710,14 @@ export async function toggleObjective(
       });
     }
   } else {
-    await removeLatestCompletionEvent(userId, CompletionType.OBJECTIVE, projectId);
+    for (const pid of participantIds) {
+      await removeLatestCompletionEvent(pid, CompletionType.OBJECTIVE, projectId);
+    }
     // Quest dropped out of completion → claw back the most recent quest bonus.
     if (wasComplete) {
-      await removeLatestCompletionEvent(userId, CompletionType.QUEST, projectId);
+      for (const pid of participantIds) {
+        await removeLatestCompletionEvent(pid, CompletionType.QUEST, projectId);
+      }
     }
   }
 
@@ -657,17 +742,25 @@ export async function toggleInventoryItem(
   });
 
   if (!item) throw new Error('Item not found');
-  if (item.project.userId !== userId) throw new Error('Unauthorized');
+  // Owner or accepted member may gather items (shared progress).
+  if ((await getQuestRole(item.projectId, userId)) === null) {
+    throw new Error('Unauthorized');
+  }
 
   const updated = await prisma.inventoryItem.update({
     where: { id: itemId },
     data: { gathered: !item.gathered },
   });
 
+  const participantIds = await acceptedParticipantIds(item.projectId);
   if (updated.gathered) {
-    await recordCompletionEvent(userId, CompletionType.ITEM, item.projectId, itemXp());
+    for (const pid of participantIds) {
+      await recordCompletionEvent(pid, CompletionType.ITEM, item.projectId, itemXp());
+    }
   } else {
-    await removeLatestCompletionEvent(userId, CompletionType.ITEM, item.projectId);
+    for (const pid of participantIds) {
+      await removeLatestCompletionEvent(pid, CompletionType.ITEM, item.projectId);
+    }
   }
 
   return updated;
@@ -932,11 +1025,18 @@ export async function updateProjectIcon(input: {
 export async function getProjectsForUser(): Promise<ProjectWithRelations[]> {
   const userId = await requireUserId();
 
+  // Own quests + quests shared with the user that they've accepted.
   return prisma.project.findMany({
-    where: { userId },
+    where: {
+      OR: [
+        { userId },
+        { members: { some: { userId, status: InviteStatus.ACCEPTED } } },
+      ],
+    },
     include: {
       objectives: { orderBy: { order: 'asc' } },
       inventoryItems: true,
+      members: { include: { user: { select: { id: true, username: true, name: true } } } },
     },
   });
 }

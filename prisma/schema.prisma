@@ -31,9 +31,16 @@ enum CompletionType {
   ITEM
 }
 
+enum InviteStatus {
+  PENDING
+  ACCEPTED
+  DECLINED
+}
+
 model User {
   id                   String                 @id @default(cuid())
   email                String                 @unique
+  username             String?                @unique
   passwordHash         String
   name                 String?
   createdAt            DateTime               @default(now())
@@ -42,6 +49,38 @@ model User {
   projects             Project[]
   achievements         UnlockedAchievement[]
   completionEvents     CompletionEvent[]
+  sentRequests         Connection[]           @relation("Requester")
+  receivedRequests     Connection[]           @relation("Addressee")
+  questMemberships     QuestMember[]
+}
+
+// Persistent hero-to-hero connection (friend link). One row per ordered pair.
+model Connection {
+  id          String       @id @default(cuid())
+  requesterId String
+  addresseeId String
+  status      InviteStatus @default(PENDING)
+  createdAt   DateTime     @default(now())
+  requester   User         @relation("Requester", fields: [requesterId], references: [id], onDelete: Cascade)
+  addressee   User         @relation("Addressee", fields: [addresseeId], references: [id], onDelete: Cascade)
+
+  @@unique([requesterId, addresseeId])
+  @@index([addresseeId])
+}
+
+// Per-quest membership / invite. The owner remains Project.userId; this tracks
+// the other heroes a quest is shared with and whether they've accepted.
+model QuestMember {
+  id        String       @id @default(cuid())
+  projectId String
+  userId    String
+  status    InviteStatus @default(PENDING)
+  createdAt DateTime     @default(now())
+  project   Project      @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  user      User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([projectId, userId])
+  @@index([userId])
 }
 
 model Project {
@@ -72,6 +111,7 @@ model Project {
   children        Project[]      @relation("EpicChildren")
   objectives      Objective[]
   inventoryItems  InventoryItem[]
+  members         QuestMember[]
 
   @@index([userId])
   @@index([parentId])

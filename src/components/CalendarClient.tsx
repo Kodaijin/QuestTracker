@@ -8,6 +8,7 @@ import { occurrencesInRange } from '@/lib/recurrence';
 import { dayKey } from '@/lib/progression';
 import { difficultyMeta } from '@/lib/difficulty';
 import LogoutButton from '@/components/LogoutButton';
+import PartyNavLink from '@/components/PartyNavLink';
 import { cn } from '@/lib/utils';
 
 interface Props {
@@ -100,7 +101,10 @@ export default function CalendarClient({ initialProjects }: Props) {
         >
           <span aria-hidden>←</span> Dashboard
         </Link>
-        <LogoutButton />
+        <div className="flex items-center gap-4">
+          <PartyNavLink />
+          <LogoutButton />
+        </div>
       </div>
 
       <div className="flex items-center justify-between mb-6">

@@ -53,6 +53,9 @@ const TS = Date.now();
 const TEST_EMAIL = `smoke+${TS}@questlog.test`;
 const OTHER_EMAIL = `smoke-other+${TS}@questlog.test`;
 const TEST_PW = 'SmokeTest@1234!';
+// Usernames must be 3–20 chars of [a-zA-Z0-9_]; TS keeps them unique per run.
+const TEST_USERNAME = `smoke${TS}`.slice(0, 20);
+const OTHER_USERNAME = `other${TS}`.slice(0, 20);
 
 // ── Reporting helpers ─────────────────────────────────────────────────────────
 
@@ -84,6 +87,7 @@ async function step1Register() {
   const result = await registerUser({
     email: TEST_EMAIL,
     password: TEST_PW,
+    username: TEST_USERNAME,
     name: 'Smoke Bot',
     securityQuestion: "Name of my first pet?",
     securityAnswer: 'smokebot',
@@ -109,6 +113,7 @@ async function step2DuplicateGuard(): Promise<void> {
   const result: RegisterResult = await registerUser({
     email: TEST_EMAIL,
     password: TEST_PW,
+    username: `dup${TS}`.slice(0, 20),
     securityQuestion: "Name of my first pet?",
     securityAnswer: 'smokebot',
   }).catch((e: unknown) =>
@@ -290,6 +295,7 @@ async function step7Ownership(testUserId: string, testObjectiveId: string): Prom
   const otherResult = await registerUser({
     email: OTHER_EMAIL,
     password: TEST_PW,
+    username: OTHER_USERNAME,
     securityQuestion: "Name of my first pet?",
     securityAnswer: 'smokebot',
   });

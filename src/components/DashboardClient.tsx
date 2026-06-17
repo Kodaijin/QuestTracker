@@ -7,6 +7,7 @@ import { RecurrenceType, Difficulty } from '@prisma/client';
 import { useProjectStore } from '@/store/useProjectStore';
 import { createProject, deleteProject } from '@/app/actions/projects';
 import type { ProjectWithRelations } from '@/app/actions/projects';
+import type { Ally } from '@/app/actions/party';
 import { recurrenceLabel, isMissed } from '@/lib/recurrence';
 import { getQuestStatus, questProgress, type QuestStatus } from '@/lib/quest';
 import { difficultyMeta, DIFFICULTIES } from '@/lib/difficulty';
@@ -22,6 +23,9 @@ import ProgressionHeader from '@/components/ProgressionHeader';
 
 interface Props {
   initialProjects: ProjectWithRelations[];
+  currentUserId: string;
+  pendingNoticeCount: number;
+  allies: Ally[];
 }
 
 const statusCardStyles: Record<QuestStatus, string> = {
@@ -51,7 +55,12 @@ const WEEKDAY_OPTIONS = [
   { label: 'Saturday', value: 6 },
 ];
 
-export default function DashboardClient({ initialProjects }: Props) {
+export default function DashboardClient({
+  initialProjects,
+  currentUserId,
+  pendingNoticeCount,
+  allies,
+}: Props) {
   const router = useRouter();
   const searchParams = useSearchParams();
   const hydrate = useProjectStore((s) => s.hydrate);
@@ -80,6 +89,9 @@ export default function DashboardClient({ initialProjects }: Props) {
   const [search, setSearch] = useState('');
   const [filterDifficulty, setFilterDifficulty] = useState<Difficulty | 'all'>('all');
   const [filterTag, setFilterTag] = useState<string | null>(null);
+
+  // ── Party sharing state ───────────────────────────────────────────────────────
+  const [selectedMemberIds, setSelectedMemberIds] = useState<string[]>([]);
 
   // ── Epic state ──────────────────────────────────────────────────────────────
   const [isEpic, setIsEpic] = useState(false);
@@ -167,6 +179,7 @@ export default function DashboardClient({ initialProjects }: Props) {
     setDeadline('');
     setError(null);
     setShowForm(false);
+    setSelectedMemberIds([]);
     setIsEpic(false);
     setSequential(false);
     setSubQuests(['']);
@@ -237,6 +250,7 @@ export default function DashboardClient({ initialProjects }: Props) {
           tags,
           availableAt: buildAvailableAtISO(),
           deadline: buildDeadlineISO(),
+          memberIds: selectedMemberIds,
           ...recurrencePayload,
         });
         resetForm();
@@ -272,6 +286,12 @@ export default function DashboardClient({ initialProjects }: Props) {
   function removeObjectiveField(index: number) {
     setObjectives((prev) =>
       prev.length === 1 ? prev : prev.filter((_, i) => i !== index),
+    );
+  }
+
+  function toggleMember(id: string) {
+    setSelectedMemberIds((prev) =>
+      prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id],
     );
   }
 
@@ -411,6 +431,12 @@ export default function DashboardClient({ initialProjects }: Props) {
                       ⚔ Epic{project.sequential ? ' · in order' : ''}
                     </span>
                   )}
+                  {(project.members?.length ?? 0) > 0 && (
+                    <span className="inline-flex items-center gap-1 rounded-md bg-emerald-950/40 border border-emerald-500/40 px-2 py-0.5 text-xs font-medium text-emerald-300">
+                      🧑‍🤝‍🧑 Party · {(project.members ?? []).filter((m) => m.status === 'ACCEPTED').length + 1}
+                      {project.userId !== currentUserId && ' · shared with you'}
+                    </span>
+                  )}
                   {label && (
                     <span className="inline-flex items-center rounded-md bg-zinc-800 px-2 py-0.5 text-xs font-medium text-zinc-300">
                       {label}
@@ -474,16 +500,18 @@ export default function DashboardClient({ initialProjects }: Props) {
             </CardContent>
           </Card>
         </Link>
-        <button
-          onClick={(e) => {
-            e.stopPropagation();
-            void handleDeleteProject(project.id, project.title);
-          }}
-          aria-label={`Delete "${project.title}"`}
-          className="absolute top-3 right-3 opacity-0 group-hover:opacity-100 transition-opacity text-zinc-500 hover:text-red-400 text-sm px-1 z-10"
-        >
-          ✕
-        </button>
+        {project.userId === currentUserId && (
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              void handleDeleteProject(project.id, project.title);
+            }}
+            aria-label={`Delete "${project.title}"`}
+            className="absolute top-3 right-3 opacity-0 group-hover:opacity-100 transition-opacity text-zinc-500 hover:text-red-400 text-sm px-1 z-10"
+          >
+            ✕
+          </button>
+        )}
       </div>
     );
   }
@@ -529,6 +557,17 @@ export default function DashboardClient({ initialProjects }: Props) {
             className="inline-flex items-center rounded-lg border border-zinc-700 bg-zinc-800/60 hover:bg-zinc-700/70 text-zinc-300 hover:text-zinc-100 text-sm font-medium px-3 py-1.5 transition-all"
           >
             🏆 Achievements
+          </Link>
+          <Link
+            href="/party"
+            className="relative inline-flex items-center rounded-lg border border-zinc-700 bg-zinc-800/60 hover:bg-zinc-700/70 text-zinc-300 hover:text-zinc-100 text-sm font-medium px-3 py-1.5 transition-all"
+          >
+            🧑‍🤝‍🧑 Party
+            {pendingNoticeCount > 0 && (
+              <span className="absolute -top-1.5 -right-1.5 inline-flex items-center justify-center rounded-full bg-indigo-500 text-white text-xs font-semibold h-5 min-w-5 px-1 ring-2 ring-zinc-950">
+                {pendingNoticeCount}
+              </span>
+            )}
           </Link>
           <Link
             href="/settings"
@@ -756,6 +795,41 @@ export default function DashboardClient({ initialProjects }: Props) {
                   + Add item
                 </Button>
               </div>
+
+              {/* Share with party (accepted allies only) */}
+              {allies.length > 0 && (
+                <div>
+                  <label className="block text-sm font-medium text-zinc-300 mb-1.5">
+                    Share with party <span className="text-zinc-500">(optional — make this a group quest)</span>
+                  </label>
+                  <div className="flex flex-wrap gap-2">
+                    {allies.map((a) => {
+                      const selected = selectedMemberIds.includes(a.userId);
+                      const label = a.username ? `@${a.username}` : a.name ?? 'ally';
+                      return (
+                        <button
+                          key={a.userId}
+                          type="button"
+                          onClick={() => toggleMember(a.userId)}
+                          aria-pressed={selected}
+                          className={cn(
+                            'inline-flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-sm font-medium transition-all',
+                            selected
+                              ? 'border-emerald-500/60 bg-emerald-950/40 text-emerald-200'
+                              : 'border-zinc-700 bg-zinc-800/50 text-zinc-400 hover:text-zinc-200',
+                          )}
+                        >
+                          {selected && <span aria-hidden>✓</span>}
+                          {label}
+                        </button>
+                      );
+                    })}
+                  </div>
+                  <p className="mt-1.5 text-xs text-zinc-500">
+                    Invited allies must accept on their <span className="text-zinc-400">Party</span> page before the quest appears on their board.
+                  </p>
+                </div>
+              )}
                 </>
               )}
 

@@ -5,6 +5,7 @@ import type { AchievementStatus } from '@/app/actions/achievements';
 import { Card, CardContent } from '@/components/ui/card';
 import { Progress } from '@/components/ui/progress';
 import LogoutButton from '@/components/LogoutButton';
+import PartyNavLink from '@/components/PartyNavLink';
 import { cn } from '@/lib/utils';
 
 interface Props {
@@ -33,7 +34,10 @@ export default function AchievementsClient({ achievements }: Props) {
         >
           <span aria-hidden>←</span> Dashboard
         </Link>
-        <LogoutButton />
+        <div className="flex items-center gap-4">
+          <PartyNavLink />
+          <LogoutButton />
+        </div>
       </div>
 
       <div className="mb-8">

@@ -12,7 +12,7 @@ export default async function SettingsPage() {
 
   const user = await prisma.user.findUnique({
     where: { id: session.user.id },
-    select: { email: true },
+    select: { email: true, username: true },
   });
 
   // Fallback should never be reached since the session guarantees the user exists,
@@ -21,5 +21,5 @@ export default async function SettingsPage() {
     redirect('/login');
   }
 
-  return <SettingsClient currentEmail={user.email} />;
+  return <SettingsClient currentEmail={user.email} currentUsername={user.username} />;
 }

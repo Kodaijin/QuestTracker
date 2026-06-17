@@ -7,10 +7,15 @@ import { z } from 'zod';
 import bcrypt from 'bcryptjs';
 import { Prisma } from '@prisma/client';
 import { prisma } from '@/lib/prisma';
+import { USERNAME_REGEX } from '@/lib/username';
 
 const registerSchema = z.object({
   email: z.string().email('Invalid email address'),
   password: z.string().min(8, 'Password must be at least 8 characters'),
+  username: z
+    .string()
+    .trim()
+    .regex(USERNAME_REGEX, 'Username must be 3–20 letters, numbers, or underscores'),
   name: z.string().optional(),
   securityQuestion: z
     .string()
@@ -34,8 +39,9 @@ export async function registerUser(input: RegisterInput): Promise<RegisterResult
     return { ok: false, error: parsed.error.issues[0]?.message ?? 'Invalid input' };
   }
 
-  const { email, password, name, securityQuestion, securityAnswer } = parsed.data;
+  const { email, password, username, name, securityQuestion, securityAnswer } = parsed.data;
   const normalizedEmail = email.toLowerCase();
+  const normalizedUsername = username.toLowerCase();
   const trimmedName = name?.trim() || undefined;
 
   const existing = await prisma.user.findUnique({
@@ -47,6 +53,15 @@ export async function registerUser(input: RegisterInput): Promise<RegisterResult
     return { ok: false, error: 'An account with that email already exists.' };
   }
 
+  const existingUsername = await prisma.user.findUnique({
+    where: { username: normalizedUsername },
+    select: { id: true },
+  });
+
+  if (existingUsername) {
+    return { ok: false, error: 'That username is already taken.' };
+  }
+
   const passwordHash = await bcrypt.hash(password, 12);
   const normalizedAnswer = securityAnswer.trim().toLowerCase();
   const securityAnswerHash = await bcrypt.hash(normalizedAnswer, 12);
@@ -55,6 +70,7 @@ export async function registerUser(input: RegisterInput): Promise<RegisterResult
     const user = await prisma.user.create({
       data: {
         email: normalizedEmail,
+        username: normalizedUsername,
         passwordHash,
         name: trimmedName ?? null,
         securityQuestion: securityQuestion.trim(),
@@ -69,7 +85,16 @@ export async function registerUser(input: RegisterInput): Promise<RegisterResult
       e instanceof Prisma.PrismaClientKnownRequestError &&
       e.code === 'P2002'
     ) {
-      return { ok: false, error: 'An account with that email already exists.' };
+      const target = e.meta?.target;
+      const isUsername = Array.isArray(target)
+        ? target.includes('username')
+        : String(target ?? '').includes('username');
+      return {
+        ok: false,
+        error: isUsername
+          ? 'That username is already taken.'
+          : 'An account with that email already exists.',
+      };
     }
     throw e;
   }

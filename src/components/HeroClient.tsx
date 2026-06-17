@@ -6,6 +6,7 @@ import type { AchievementStatus } from '@/app/actions/achievements';
 import type { QuestStats } from '@/lib/achievements';
 import { Card, CardContent } from '@/components/ui/card';
 import LogoutButton from '@/components/LogoutButton';
+import PartyNavLink from '@/components/PartyNavLink';
 import CountUp from '@/components/CountUp';
 import { cn } from '@/lib/utils';
 
@@ -47,7 +48,10 @@ export default function HeroClient({ progression, achievements, stats }: Props) 
         >
           <span aria-hidden>←</span> Dashboard
         </Link>
-        <LogoutButton />
+        <div className="flex items-center gap-4">
+          <PartyNavLink />
+          <LogoutButton />
+        </div>
       </div>
 
       {/* Hero banner: level + XP + streak */}
