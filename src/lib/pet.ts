@@ -7,9 +7,30 @@ import type { StreakInfo } from '@/lib/progression';
 // ── Species ─────────────────────────────────────────────────────────────────
 
 export const PET_SPECIES = [
+  { id: 'cat', label: 'Cat', emoji: '🐱' },
   { id: 'dragon', label: 'Dragon', emoji: '🐉' },
   { id: 'fox', label: 'Fox Spirit', emoji: '🦊' },
   { id: 'slime', label: 'Slime', emoji: '🟢' },
+  { id: 'dog', label: 'Dog', emoji: '🐶' },
+  { id: 'wolf', label: 'Wolf', emoji: '🐺' },
+  { id: 'bear', label: 'Bear', emoji: '🐻' },
+  { id: 'panda', label: 'Panda', emoji: '🐼' },
+  { id: 'tiger', label: 'Tiger', emoji: '🐯' },
+  { id: 'lion', label: 'Lion', emoji: '🦁' },
+  { id: 'rabbit', label: 'Rabbit', emoji: '🐰' },
+  { id: 'hamster', label: 'Hamster', emoji: '🐹' },
+  { id: 'owl', label: 'Owl', emoji: '🦉' },
+  { id: 'penguin', label: 'Penguin', emoji: '🐧' },
+  { id: 'chick', label: 'Chick', emoji: '🐥' },
+  { id: 'frog', label: 'Frog', emoji: '🐸' },
+  { id: 'turtle', label: 'Turtle', emoji: '🐢' },
+  { id: 'octopus', label: 'Octopus', emoji: '🐙' },
+  { id: 'unicorn', label: 'Unicorn', emoji: '🦄' },
+  { id: 'koala', label: 'Koala', emoji: '🐨' },
+  { id: 'hedgehog', label: 'Hedgehog', emoji: '🦔' },
+  { id: 'dino', label: 'Dino', emoji: '🦕' },
+  { id: 'ghost', label: 'Ghost', emoji: '👻' },
+  { id: 'robot', label: 'Robot', emoji: '🤖' },
 ] as const;
 
 export type PetSpeciesId = (typeof PET_SPECIES)[number]['id'];
