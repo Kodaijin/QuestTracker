@@ -33,11 +33,15 @@ export type CosmeticsResult =
   | { ok: false; error: string };
 
 /** Maps a cosmetic category to the User column that stores the equipped id. */
-const CATEGORY_COLUMN: Record<CosmeticCategory, 'themeId' | 'xpBarId' | 'frameId' | 'particleId'> = {
+const CATEGORY_COLUMN: Record<
+  CosmeticCategory,
+  'themeId' | 'xpBarId' | 'frameId' | 'particleId' | 'backgroundId'
+> = {
   theme: 'themeId',
   xpbar: 'xpBarId',
   frame: 'frameId',
   particle: 'particleId',
+  background: 'backgroundId',
 };
 
 async function buildState(userId: string): Promise<CosmeticsState> {
@@ -47,7 +51,7 @@ async function buildState(userId: string): Promise<CosmeticsState> {
     prisma.cosmeticUnlock.findMany({ where: { userId }, select: { cosmeticId: true } }),
     prisma.user.findUnique({
       where: { id: userId },
-      select: { themeId: true, xpBarId: true, frameId: true, particleId: true },
+      select: { themeId: true, xpBarId: true, frameId: true, particleId: true, backgroundId: true },
     }),
   ]);
 
@@ -69,6 +73,7 @@ async function buildState(userId: string): Promise<CosmeticsState> {
       xpbar: user?.xpBarId ?? null,
       frame: user?.frameId ?? null,
       particle: user?.particleId ?? null,
+      background: user?.backgroundId ?? null,
     },
   };
 }
@@ -108,7 +113,7 @@ export async function purchaseCosmetic(input: { cosmeticId: string }): Promise<C
 }
 
 const equipSchema = z.object({
-  category: z.enum(['theme', 'xpbar', 'frame', 'particle']),
+  category: z.enum(['theme', 'xpbar', 'frame', 'particle', 'background']),
   // null unequips (back to the default look).
   cosmeticId: z.string().min(1).nullable(),
 });
@@ -128,11 +133,14 @@ export async function equipCosmetic(input: {
     if (!cosmetic || cosmetic.category !== category) {
       return { ok: false, error: 'Unknown cosmetic.' };
     }
-    const owned = await prisma.cosmeticUnlock.findUnique({
-      where: { userId_cosmeticId: { userId, cosmeticId } },
-      select: { id: true },
-    });
-    if (!owned) return { ok: false, error: "You don't own this yet." };
+    // Free cosmetics (e.g. default backgrounds) can be equipped without a purchase.
+    if (!cosmetic.free) {
+      const owned = await prisma.cosmeticUnlock.findUnique({
+        where: { userId_cosmeticId: { userId, cosmeticId } },
+        select: { id: true },
+      });
+      if (!owned) return { ok: false, error: "You don't own this yet." };
+    }
   }
 
   await prisma.user.update({

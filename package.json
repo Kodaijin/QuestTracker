@@ -15,6 +15,9 @@
   },
   "dependencies": {
     "@prisma/client": "^5.22.0",
+    "@react-three/drei": "^9.122.0",
+    "@react-three/fiber": "^8.18.0",
+    "@react-three/postprocessing": "^2.19.1",
     "bcryptjs": "^3.0.3",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
@@ -23,6 +26,7 @@
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
     "tailwind-merge": "^3.6.0",
+    "three": "^0.169.0",
     "web-push": "^3.6.7",
     "zod": "^4.4.3",
     "zustand": "^5.0.14"
@@ -30,9 +34,10 @@
   "devDependencies": {
     "@types/bcryptjs": "^2.4.6",
     "@types/node": "^25.9.3",
-    "@types/react": "^19.2.17",
-    "@types/react-dom": "^19.2.3",
+    "@types/react": "^18.3.31",
+    "@types/react-dom": "^18.3.7",
     "@types/sharp": "^0.31.1",
+    "@types/three": "^0.169.0",
     "@types/web-push": "^3.6.4",
     "autoprefixer": "^10.5.0",
     "postcss": "^8.5.15",

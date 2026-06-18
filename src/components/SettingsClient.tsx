@@ -7,6 +7,7 @@ import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
 import PartyNavLink from '@/components/PartyNavLink';
 import NotificationBell from '@/components/NotificationBell';
 import ShopNavLink from '@/components/ShopNavLink';
+import BackgroundPicker from '@/components/BackgroundPicker';
 import {
   changeEmail,
   changeUsername,
@@ -352,6 +353,9 @@ export default function SettingsClient({
             </button>
           </CardContent>
         </Card>
+
+        {/* ── Background ────────────────────────────────────────────────────── */}
+        <BackgroundPicker />
 
         {/* ── Change email ──────────────────────────────────────────────────── */}
         <Card>

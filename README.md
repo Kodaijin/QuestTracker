@@ -19,12 +19,13 @@ Built with Next.js (App Router), Prisma, PostgreSQL, and NextAuth — fully cont
 - **Insights** (`/insights`) — a contribution heatmap, XP-over-time, completions by type, quests by difficulty, and achievement progress
 - **Tags, search & filters** — tag quests for grouping, then search and filter the board by text, difficulty, or tag
 - **Achievements** — 50+ cheeky badges (including streak milestones) unlocked just by using the app, tracked per user and never revoked once earned
-- **Completion effects** — sparkle-and-glow feedback when you check an objective, and a golden "Quest Complete!" celebration when a quest is finished (respects `prefers-reduced-motion`)
+- **Completion effects** — sparkle-and-glow feedback when you check an objective, and a golden "Quest Complete!" celebration when a quest is finished. Level-up, quest-complete, and companion-evolution celebrations upgrade to **GPU particle showers with bloom** when WebGL is available, falling back to the CSS effect otherwise (respects `prefers-reduced-motion`)
 - **Recurring quests** — daily, weekly, every N weeks, monthly, or a specific date; elapsed quests advance automatically on load
 - **Party & group quests** (`/party`) — add allies by unique username (they accept or decline), then share a quest with chosen allies when you create it. Invited heroes accept the quest per-invite; once joined, the party shares the same progress and **every member earns XP** when it's completed. Members can always check off shared progress, and the owner can **allow members to edit** the quest too (add/edit objectives, inventory, and settings) via a per-quest toggle — only the owner can delete it. Either ally can **remove** the other at any time, which also severs their shared-quest memberships in both directions. A notice badge in the nav surfaces pending ally requests and quest invites
 - **Companion pet** — adopt a companion from a wide roster (cat, dragon, fox spirit, dog, owl, penguin, unicorn, and many more) on your hero page that **evolves as you level up** (Egg → Hatchling → Juvenile → Adult → Mythic) and reacts to your streak with a mood; evolutions get their own celebration
 - **Reminders** (`/notifications`) — opt-in **web push** notifications (delivered even when the app is closed) plus an in-app alert center for come-back nudges, streak-at-risk warnings, approaching quest deadlines, and a "your companion misses you" poke. Per-type toggles and a daily reminder time live in Settings
-- **Quest Gems & Shop** (`/shop`) — earn 💎 gems by leveling up, unlocking achievements, and hitting streak milestones, then spend them on cosmetics: app-wide **color themes**, animated **XP-bar styles**, **frames & glows** for your hero panel, and **celebration particle** styles. The gem balance is derived from your (farm-proof) progress, so it can't be cheesed by toggling quests. A gem-balance chip lives in the nav
+- **Quest Gems & Shop** (`/shop`) — earn 💎 gems by leveling up, unlocking achievements, and hitting streak milestones, then spend them on cosmetics: app-wide **color themes**, animated **XP-bar styles**, **frames & glows** for your hero panel, **celebration particle** styles, and animated **WebGL backgrounds**. The gem balance is derived from your (farm-proof) progress, so it can't be cheesed by toggling quests. A spinning 3D gem-balance chip lives in the nav
+- **Backgrounds** — pick your ambient backdrop in Settings (or the Shop). The classic CSS aurora is the free default; extra **WebGL backgrounds** (living aurora, nebula, deep starfield) render as shaders, some free and some gem-priced. All gracefully fall back to the CSS aurora on devices without WebGL or with `prefers-reduced-motion`
 - **Authentication** — email/password accounts via NextAuth, each with a unique username for party invites and a security-question password reset flow
 - **Custom icons** — upload and auto-resize quest icons
 
@@ -38,6 +39,7 @@ Built with Next.js (App Router), Prisma, PostgreSQL, and NextAuth — fully cont
 | ORM      | Prisma                                 |
 | Auth     | NextAuth                               |
 | Styling  | Tailwind CSS                           |
+| 3D / WebGL| three.js via react-three-fiber + drei + postprocessing (lazy-loaded) |
 | State    | Zustand                                |
 | Runtime  | Docker / Docker Compose                |
 
@@ -124,9 +126,16 @@ See `.env.example` for a complete template. **Note:** web push requires HTTPS in
 - **PushSubscription** — a browser Web Push endpoint registered by a user for notifications
 - **Notification** — in-app alert history and the source of truth for push de-duplication (unique per user + type + key)
 - **NotificationPreference** — per-user reminder toggles and the daily reminder hour
-- **CosmeticUnlock** — a cosmetic the user has bought with gems (ownership only); the gem balance is derived as `earned − sum(owned prices)`, never stored as a counter. Equipped selections live on `User` (`themeId`/`xpBarId`/`frameId`/`particleId`); the catalog and economy are code-defined in `src/lib/cosmetics.ts`
+- **CosmeticUnlock** — a cosmetic the user has bought with gems (ownership only); the gem balance is derived as `earned − sum(owned prices)`, never stored as a counter. Equipped selections live on `User` (`themeId`/`xpBarId`/`frameId`/`particleId`/`backgroundId`); the catalog and economy are code-defined in `src/lib/cosmetics.ts`. Free cosmetics (e.g. the default backgrounds) can be equipped without a purchase
 
 ## Changelog
+
+### 2026-06-18 — WebGL graphics (three.js)
+
+- **WebGL backgrounds** — shader-based ambient backdrops (living aurora, nebula, deep starfield) selectable in Settings and the Shop, added as a new `background` cosmetic category. The classic CSS aurora stays the free default; some WebGL backgrounds are free, others are gem-priced
+- **GPU celebration effects** — level-up, quest-complete, and companion-evolution showers upgrade to bloom-lit GPU particle bursts when WebGL is available
+- **3D Quest Gem** — a spinning, glossy gem replaces the 💎 glyph in the Shop
+- Built on **three.js** via react-three-fiber + drei + postprocessing, all lazy-loaded so they stay out of the initial bundle. A single capability gate (`src/lib/useWebGL.ts`) requires WebGL2 and honors `prefers-reduced-motion`, otherwise everything falls back to the existing CSS/DOM visuals. New `User.backgroundId` column and a `free` flag on cosmetics
 
 ### 2026-06-18 — Quest Gems & cosmetic Shop
 

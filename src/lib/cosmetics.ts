@@ -38,14 +38,18 @@ export function earnedGems(args: {
 
 // ── Cosmetic catalog ────────────────────────────────────────────────────────────
 
-export type CosmeticCategory = 'theme' | 'xpbar' | 'frame' | 'particle';
+export type CosmeticCategory = 'theme' | 'xpbar' | 'frame' | 'particle' | 'background';
 
 export const COSMETIC_CATEGORIES: { id: CosmeticCategory; label: string; blurb: string }[] = [
   { id: 'theme', label: 'Color Themes', blurb: 'Recolor the app accent everywhere.' },
   { id: 'xpbar', label: 'XP Bar Styles', blurb: 'Animate your XP bar.' },
   { id: 'frame', label: 'Frames & Glows', blurb: 'Decorate your hero panel.' },
   { id: 'particle', label: 'Celebration FX', blurb: 'Restyle level-up sparkles.' },
+  { id: 'background', label: 'Backgrounds', blurb: 'Set the ambient backdrop behind everything.' },
 ];
+
+/** Which renderer a background cosmetic uses. 'css' = the original CSS aurora. */
+export type BackgroundKind = 'css' | 'aurora-webgl' | 'nebula' | 'starfield';
 
 export interface Cosmetic {
   id: string;
@@ -53,6 +57,8 @@ export interface Cosmetic {
   name: string;
   description: string;
   price: number;
+  /** Free cosmetics can be equipped without a purchase (no CosmeticUnlock row). */
+  free?: boolean;
   /** Two hex colors for the shop preview swatch. */
   swatch: [string, string];
   /** `data-theme` value (theme category). */
@@ -61,6 +67,8 @@ export interface Cosmetic {
   className?: string;
   /** Particle set (particle category). */
   particle?: { chars: string[]; colorClass: string };
+  /** Renderer to use (background category). */
+  background?: { kind: BackgroundKind };
 }
 
 export const COSMETICS: Cosmetic[] = [
@@ -88,6 +96,13 @@ export const COSMETICS: Cosmetic[] = [
   { id: 'particle-petals', category: 'particle', name: 'Petals', description: 'Drifting cherry petals.', price: 100, swatch: ['#f9a8d4', '#fb7185'], particle: { chars: ['🌸', '🌺', '🌷'], colorClass: 'text-pink-300' } },
   { id: 'particle-embers', category: 'particle', name: 'Embers', description: 'Rising fiery embers.', price: 100, swatch: ['#fb923c', '#ef4444'], particle: { chars: ['🔥', '✦', '✶'], colorClass: 'text-orange-300' } },
   { id: 'particle-confetti', category: 'particle', name: 'Confetti', description: 'A festive confetti burst.', price: 200, swatch: ['#e879f9', '#22d3ee'], particle: { chars: ['🎉', '🎊', '✨'], colorClass: 'text-fuchsia-300' } },
+
+  // ── Backgrounds (ambient backdrop behind all content) ──
+  // `bg-aurora` is the original CSS look and the default — free, no canvas.
+  { id: 'bg-aurora', category: 'background', name: 'Aurora', description: 'The classic drifting aurora glow.', price: 0, free: true, swatch: ['#6366f1', '#d946ef'], background: { kind: 'css' } },
+  { id: 'bg-aurora-live', category: 'background', name: 'Living Aurora', description: 'A flowing WebGL aurora with floating motes.', price: 0, free: true, swatch: ['#818cf8', '#22d3ee'], background: { kind: 'aurora-webgl' } },
+  { id: 'bg-nebula', category: 'background', name: 'Nebula', description: 'Billowing colored nebula clouds.', price: 300, swatch: ['#a855f7', '#ec4899'], background: { kind: 'nebula' } },
+  { id: 'bg-starfield', category: 'background', name: 'Deep Starfield', description: 'A parallax field of drifting stars.', price: 350, swatch: ['#38bdf8', '#1e293b'], background: { kind: 'starfield' } },
 ];
 
 // ── Helpers ─────────────────────────────────────────────────────────────────────
@@ -112,6 +127,7 @@ export interface EquippedCosmetics {
   xpbar: string | null;
   frame: string | null;
   particle: string | null;
+  background: string | null;
 }
 
 export const DEFAULT_EQUIPPED: EquippedCosmetics = {
@@ -119,6 +135,7 @@ export const DEFAULT_EQUIPPED: EquippedCosmetics = {
   xpbar: null,
   frame: null,
   particle: null,
+  background: null,
 };
 
 /** The default level-up/quest-complete particle (amber stars) when none is equipped. */
@@ -128,4 +145,13 @@ export const DEFAULT_PARTICLE = { chars: ['✦', '✧', '✶', '⋆'], colorClas
 export function particleFor(id: string | null): { chars: string[]; colorClass: string } {
   if (!id) return DEFAULT_PARTICLE;
   return getCosmetic(id)?.particle ?? DEFAULT_PARTICLE;
+}
+
+/** The default background when none is equipped: the original CSS aurora. */
+export const DEFAULT_BACKGROUND_KIND: BackgroundKind = 'css';
+
+/** Resolve the background renderer for an equipped id, falling back to CSS aurora. */
+export function backgroundFor(id: string | null): BackgroundKind {
+  if (!id) return DEFAULT_BACKGROUND_KIND;
+  return getCosmetic(id)?.background?.kind ?? DEFAULT_BACKGROUND_KIND;
 }

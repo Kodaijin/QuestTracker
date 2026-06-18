@@ -51,6 +51,7 @@ model User {
   xpBarId              String?
   frameId              String?
   particleId           String?
+  backgroundId         String?
   projects             Project[]
   achievements         UnlockedAchievement[]
   completionEvents     CompletionEvent[]

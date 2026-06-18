@@ -1,7 +1,9 @@
 'use client';
 
 import { useState, useTransition } from 'react';
+import dynamic from 'next/dynamic';
 import Link from 'next/link';
+import { useWebGLEnabled } from '@/lib/useWebGL';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import {
@@ -17,6 +19,8 @@ import {
   type CosmeticCategory,
 } from '@/lib/cosmetics';
 import { cn } from '@/lib/utils';
+
+const GemModel = dynamic(() => import('@/components/GemModel'), { ssr: false });
 
 interface Props {
   initialState: CosmeticsState;
@@ -53,6 +57,7 @@ function Preview({ c }: { c: Cosmetic }) {
 
 export default function ShopClient({ initialState }: Props) {
   const { refresh } = useCosmetics();
+  const webgl = useWebGLEnabled();
   const [state, setState] = useState<CosmeticsState>(initialState);
   const [tab, setTab] = useState<CosmeticCategory>('theme');
   const [error, setError] = useState<string | null>(null);
@@ -99,13 +104,15 @@ export default function ShopClient({ initialState }: Props) {
           <span aria-hidden>←</span> Dashboard
         </Link>
         <div className="inline-flex items-center gap-2 rounded-lg border border-amber-500/40 bg-amber-950/30 px-3 py-1.5">
-          <span aria-hidden>💎</span>
+          {webgl ? <GemModel size={22} /> : <span aria-hidden>💎</span>}
           <span className="font-bold tabular-nums text-amber-200">{state.balance}</span>
           <span className="text-xs text-amber-400/80">gems</span>
         </div>
       </div>
 
-      <h1 className="text-3xl font-bold tracking-tight text-zinc-50">💎 Shop</h1>
+      <h1 className="flex items-center gap-2 text-3xl font-bold tracking-tight text-zinc-50">
+        {webgl ? <GemModel size={36} /> : <span aria-hidden>💎</span>} Shop
+      </h1>
       <p className="mt-1 text-sm text-zinc-400">
         Spend Quest Gems on cosmetics. You&apos;ve earned <span className="text-zinc-200">{state.earned}</span> gems
         and spent <span className="text-zinc-200">{state.spent}</span>. Earn more by leveling up, unlocking
@@ -141,7 +148,8 @@ export default function ShopClient({ initialState }: Props) {
       {/* Items */}
       <div className="mt-5 grid grid-cols-1 sm:grid-cols-2 gap-4">
         {items.map((c) => {
-          const owned = state.ownedIds.includes(c.id);
+          // Free cosmetics need no purchase — treat them as already owned.
+          const owned = state.ownedIds.includes(c.id) || !!c.free;
           const equipped = state.equipped[c.category] === c.id;
           const affordable = state.balance >= c.price;
           const busy = busyId === c.id;

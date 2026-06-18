@@ -2,13 +2,33 @@
 
 import { useState } from 'react';
 import type { CSSProperties } from 'react';
+import dynamic from 'next/dynamic';
+import { webGLAvailable } from '@/lib/useWebGL';
 
 const BURST_CHARS = ['✦', '✧', '✶', '⋆'];
 const RISE_CHARS = ['✦', '✧', '✨', '⭐', '🌟', '⋆'];
 
+// WebGL particle shower — loaded only when WebGL is available, so three.js stays
+// out of the initial bundle.
+const WebGLShower = dynamic(() => import('@/components/effects/WebGLShower'), { ssr: false });
+
 /** An equipped celebration-particle cosmetic (chars + Tailwind text color). */
 export type ParticleStyle = { chars: string[]; colorClass: string };
 const DEFAULT_RISE: ParticleStyle = { chars: RISE_CHARS, colorClass: 'text-amber-300' };
+
+/** Maps the Tailwind text-color classes used by particle cosmetics to a hex palette. */
+const CLASS_TO_HEX: Record<string, string> = {
+  'text-amber-300': '#fcd34d',
+  'text-pink-300': '#f9a8d4',
+  'text-orange-300': '#fdba74',
+  'text-fuchsia-300': '#f0abfc',
+  'text-emerald-300': '#6ee7b7',
+};
+
+/** Two-color palette (cosmetic color + bright white sparkle) for the WebGL shower. */
+function showerColors(colorClass: string): string[] {
+  return [CLASS_TO_HEX[colorClass] ?? '#fcd34d', '#ffffff'];
+}
 
 type BurstParticle = { dx: number; dy: number; delay: number; char: string };
 type RiseParticle = { left: number; delay: number; size: number; char: string };
@@ -74,27 +94,33 @@ export function QuestCompleteEffect({
     })),
   );
 
+  const webgl = webGLAvailable();
+
   return (
     <>
-      {/* Rising sparkles layered over the header. */}
-      <span
-        className="pointer-events-none absolute inset-x-0 bottom-0 top-0 overflow-visible"
-        aria-hidden
-      >
-        {particles.map((p, i) => (
-          <span
-            key={i}
-            className={`sparkle-rise-particle leading-none ${particle.colorClass}`}
-            style={{
-              left: `${p.left}%`,
-              fontSize: `${p.size}rem`,
-              animationDelay: `${p.delay}s`,
-            }}
-          >
-            {p.char}
-          </span>
-        ))}
-      </span>
+      {/* Rising sparkles over the header — WebGL shower when available, else CSS glyphs. */}
+      {webgl ? (
+        <WebGLShower colors={showerColors(particle.colorClass)} count={140} />
+      ) : (
+        <span
+          className="pointer-events-none absolute inset-x-0 bottom-0 top-0 overflow-visible"
+          aria-hidden
+        >
+          {particles.map((p, i) => (
+            <span
+              key={i}
+              className={`sparkle-rise-particle leading-none ${particle.colorClass}`}
+              style={{
+                left: `${p.left}%`,
+                fontSize: `${p.size}rem`,
+                animationDelay: `${p.delay}s`,
+              }}
+            >
+              {p.char}
+            </span>
+          ))}
+        </span>
+      )}
 
       {/* Floating toast. */}
       <div
@@ -132,24 +158,30 @@ export function LevelUpEffect({
     })),
   );
 
+  const webgl = webGLAvailable();
+
   return (
     <>
-      {/* Full-viewport sparkle shower. */}
-      <span className="pointer-events-none fixed inset-0 z-40 overflow-hidden" aria-hidden>
-        {particles.map((p, i) => (
-          <span
-            key={i}
-            className={`sparkle-rise-particle leading-none ${particle.colorClass}`}
-            style={{
-              left: `${p.left}%`,
-              fontSize: `${p.size}rem`,
-              animationDelay: `${p.delay}s`,
-            }}
-          >
-            {p.char}
-          </span>
-        ))}
-      </span>
+      {/* Full-viewport sparkle shower — WebGL when available, else CSS glyphs. */}
+      {webgl ? (
+        <WebGLShower colors={showerColors(particle.colorClass)} count={300} />
+      ) : (
+        <span className="pointer-events-none fixed inset-0 z-40 overflow-hidden" aria-hidden>
+          {particles.map((p, i) => (
+            <span
+              key={i}
+              className={`sparkle-rise-particle leading-none ${particle.colorClass}`}
+              style={{
+                left: `${p.left}%`,
+                fontSize: `${p.size}rem`,
+                animationDelay: `${p.delay}s`,
+              }}
+            >
+              {p.char}
+            </span>
+          ))}
+        </span>
+      )}
 
       {/* Level-up toast. */}
       <div
@@ -178,23 +210,29 @@ export function PetEvolveEffect({ emoji, stageLabel }: { emoji: string; stageLab
     })),
   );
 
+  const webgl = webGLAvailable();
+
   return (
     <>
-      <span className="pointer-events-none fixed inset-0 z-40 overflow-hidden" aria-hidden>
-        {particles.map((p, i) => (
-          <span
-            key={i}
-            className="sparkle-rise-particle leading-none text-emerald-300"
-            style={{
-              left: `${p.left}%`,
-              fontSize: `${p.size}rem`,
-              animationDelay: `${p.delay}s`,
-            }}
-          >
-            {p.char}
-          </span>
-        ))}
-      </span>
+      {webgl ? (
+        <WebGLShower colors={showerColors('text-emerald-300')} count={240} />
+      ) : (
+        <span className="pointer-events-none fixed inset-0 z-40 overflow-hidden" aria-hidden>
+          {particles.map((p, i) => (
+            <span
+              key={i}
+              className="sparkle-rise-particle leading-none text-emerald-300"
+              style={{
+                left: `${p.left}%`,
+                fontSize: `${p.size}rem`,
+                animationDelay: `${p.delay}s`,
+              }}
+            >
+              {p.char}
+            </span>
+          ))}
+        </span>
+      )}
 
       <div
         role="status"
