@@ -1,4 +1,4 @@
-# QuestLog
+# QuestTracker
 
 A gamified, RPG-flavored task tracker. Turn your projects into **quests**, break them into **objectives**, check off the **loot** you've gathered, **earn XP and level up your hero**, keep a **daily streak**, unlock **achievements**, and let recurring quests reset themselves on a schedule.
 
@@ -168,7 +168,7 @@ See `.env.example` for a complete template. **Note:** web push requires HTTPS in
 - **Epic Quests** — sub-quest hierarchy with optional in-order locking
 - Inventory on quest creation + objective/quest completion effects
 - **Achievements** added; inventory items became a toggle rather than a count
-- Initial QuestLog release — quests, objectives, recurrence, and authentication
+- Initial QuestTracker release — quests, objectives, recurrence, and authentication
 
 ## License
 

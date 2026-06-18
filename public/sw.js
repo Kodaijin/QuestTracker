@@ -1,4 +1,4 @@
-// QuestLog service worker — handles Web Push display and click-through.
+// QuestTracker service worker — handles Web Push display and click-through.
 // Registered by the client (see usePushSubscription). Served at /sw.js (root scope).
 
 self.addEventListener('push', (event) => {
@@ -6,10 +6,10 @@ self.addEventListener('push', (event) => {
   try {
     data = event.data ? event.data.json() : {};
   } catch (e) {
-    data = { title: 'QuestLog', body: event.data ? event.data.text() : '' };
+    data = { title: 'QuestTracker', body: event.data ? event.data.text() : '' };
   }
 
-  const title = data.title || 'QuestLog';
+  const title = data.title || 'QuestTracker';
   const options = {
     body: data.body || '',
     data: { href: data.href || '/' },

@@ -3,7 +3,7 @@ import { Providers } from './providers';
 import AmbientBackground from '@/components/AmbientBackground';
 import './globals.css';
 
-export const metadata = { title: 'QuestLog' };
+export const metadata = { title: 'QuestTracker' };
 
 export default function RootLayout({ children }: { children: ReactNode }) {
   return (

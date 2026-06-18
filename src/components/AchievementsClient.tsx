@@ -47,7 +47,7 @@ export default function AchievementsClient({ achievements }: Props) {
           🏆 Achievements
         </h1>
         <p className="mt-1 text-sm text-zinc-400">
-          Cheeky badges earned just by using QuestLog.
+          Cheeky badges earned just by using QuestTracker.
         </p>
         <div className="mt-5 space-y-1.5 max-w-md">
           <div className="flex justify-between text-xs text-zinc-400">

@@ -1,5 +1,5 @@
 /**
- * QuestLog end-to-end smoke test.
+ * QuestTracker end-to-end smoke test.
  *
  * Run:  npm run smoke
  *
@@ -366,7 +366,7 @@ async function main(): Promise<void> {
   const dbUrl = process.env.DATABASE_URL ?? '(DATABASE_URL not set)';
   const maskedDb = dbUrl.replace(/:\/\/[^@]+@/, '://*@');
 
-  console.log('\nQuestLog Smoke Test');
+  console.log('\nQuestTracker Smoke Test');
   console.log('═'.repeat(60));
   console.log(`  test email : ${TEST_EMAIL}`);
   console.log(`  app url    : ${BASE_URL}`);
