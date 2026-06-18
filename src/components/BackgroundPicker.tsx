@@ -1,6 +1,7 @@
 'use client';
 
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import { useState, useTransition } from 'react';
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
 import { Button, buttonVariants } from '@/components/ui/button';
@@ -15,6 +16,7 @@ import { cn } from '@/lib/utils';
  * state the Shop uses (via `useCosmetics`), so changes apply app-wide.
  */
 export default function BackgroundPicker() {
+  const router = useRouter();
   const { equipped, ownedIds, refresh } = useCosmetics();
   const [busyId, setBusyId] = useState<string | null>(null);
   const [, startTransition] = useTransition();
@@ -26,8 +28,13 @@ export default function BackgroundPicker() {
   function equip(id: string) {
     setBusyId(id);
     startTransition(async () => {
-      await equipCosmetic({ category: 'background', cosmeticId: id });
-      await refresh();
+      const result = await equipCosmetic({ category: 'background', cosmeticId: id });
+      if (result.ok) {
+        await refresh();
+        // The active background is rendered from the server layout, so re-fetch it
+        // to swap the backdrop live without a manual reload.
+        router.refresh();
+      }
       setBusyId(null);
     });
   }
