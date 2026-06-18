@@ -76,6 +76,39 @@ async function getQuestRole(projectId: string, userId: string): Promise<QuestRol
   return membership?.status === InviteStatus.ACCEPTED ? 'member' : null;
 }
 
+/**
+ * Throw unless the caller may participate in the quest at all — owner or any
+ * accepted member. Used for shared *progress* (checking objectives/items off),
+ * which every party member can always do regardless of edit permissions.
+ */
+async function assertQuestParticipant(projectId: string, userId: string): Promise<void> {
+  if ((await getQuestRole(projectId, userId)) === null) {
+    throw new Error('Unauthorized');
+  }
+}
+
+/**
+ * Throw unless the caller may *edit* the quest — add/edit objectives & inventory
+ * and change settings. The owner always may; accepted members may only when the
+ * owner has left `membersCanEdit` on. Deleting the quest stays owner-only and is
+ * gated separately with an explicit `userId` check.
+ */
+async function assertCanEditQuest(projectId: string, userId: string): Promise<void> {
+  const project = await prisma.project.findUnique({
+    where: { id: projectId },
+    select: { userId: true, membersCanEdit: true },
+  });
+  if (!project) throw new Error('Project not found');
+  if (project.userId === userId) return; // owner
+
+  const membership = await prisma.questMember.findUnique({
+    where: { projectId_userId: { projectId, userId } },
+    select: { status: true },
+  });
+  if (membership?.status === InviteStatus.ACCEPTED && project.membersCanEdit) return;
+  throw new Error('Unauthorized');
+}
+
 /** The owner plus every accepted member — i.e. who earns XP when the quest progresses. */
 async function acceptedParticipantIds(projectId: string): Promise<string[]> {
   const project = await prisma.project.findUnique({
@@ -286,12 +319,19 @@ const createProjectSchema = z
       .default([]),
     // Accepted-ally user ids to share this quest with (non-epic quests only).
     memberIds: z.array(z.string().min(1)).optional().default([]),
+    // For shared quests: whether invited members may edit (not just check off).
+    membersCanEdit: z.boolean().optional().default(true),
   })
   .merge(recurrenceSchema);
 
 const setDifficultySchema = z.object({
   projectId: z.string().min(1, 'projectId is required'),
   difficulty: z.nativeEnum(Difficulty),
+});
+
+const setMemberPermissionsSchema = z.object({
+  projectId: z.string().min(1, 'projectId is required'),
+  membersCanEdit: z.boolean(),
 });
 
 const setTagsSchema = z.object({
@@ -384,6 +424,7 @@ export async function createProject(
     sequential,
     subQuests,
     memberIds,
+    membersCanEdit,
     ...recInput
   } = parsed.data;
 
@@ -439,6 +480,7 @@ export async function createProject(
       availableAt: availableAtDate,
       deadline: deadlineDate,
       userId,
+      membersCanEdit,
       recurrenceType: recFields.recurrenceType,
       dayOfWeek: recFields.dayOfWeek,
       intervalWeeks: recFields.intervalWeeks,
@@ -483,7 +525,8 @@ export async function createObjective(
   });
 
   if (!project) throw new Error('Project not found');
-  if (project.userId !== userId) throw new Error('Unauthorized');
+  // Owner, or a member when the owner allows member edits.
+  await assertCanEditQuest(projectId, userId);
 
   // Append to the end: next order is one past the current maximum.
   const last = await prisma.objective.findFirst({
@@ -516,7 +559,8 @@ export async function createInventoryItem(
   });
 
   if (!project) throw new Error('Project not found');
-  if (project.userId !== userId) throw new Error('Unauthorized');
+  // Owner, or a member when the owner allows member edits.
+  await assertCanEditQuest(projectId, userId);
 
   return prisma.inventoryItem.create({
     data: { projectId, name, gathered: false },
@@ -655,10 +699,9 @@ export async function toggleObjective(
   });
 
   if (!objective) throw new Error('Objective not found');
-  // Owner or accepted member may check objectives off (shared progress).
-  if ((await getQuestRole(objective.project.id, userId)) === null) {
-    throw new Error('Unauthorized');
-  }
+  // Any participant (owner or accepted member) may check objectives off — shared
+  // progress is always allowed, independent of the members-can-edit setting.
+  await assertQuestParticipant(objective.project.id, userId);
 
   // Hard-lock guard: a sub-quest under a sequential epic can't be touched until
   // its earlier siblings are complete.
@@ -742,10 +785,9 @@ export async function toggleInventoryItem(
   });
 
   if (!item) throw new Error('Item not found');
-  // Owner or accepted member may gather items (shared progress).
-  if ((await getQuestRole(item.projectId, userId)) === null) {
-    throw new Error('Unauthorized');
-  }
+  // Any participant (owner or accepted member) may gather items — shared progress
+  // is always allowed, independent of the members-can-edit setting.
+  await assertQuestParticipant(item.projectId, userId);
 
   const updated = await prisma.inventoryItem.update({
     where: { id: itemId },
@@ -784,7 +826,8 @@ export async function updateProject(
     select: { userId: true },
   });
   if (!project) throw new Error('Project not found');
-  if (project.userId !== userId) throw new Error('Unauthorized');
+  // Owner, or a member when the owner allows member edits.
+  await assertCanEditQuest(projectId, userId);
 
   return prisma.project.update({
     where: { id: projectId },
@@ -818,7 +861,7 @@ export async function updateObjective(
     include: { project: { select: { userId: true } } },
   });
   if (!objective) throw new Error('Objective not found');
-  if (objective.project.userId !== userId) throw new Error('Unauthorized');
+  await assertCanEditQuest(objective.projectId, userId);
 
   return prisma.objective.update({
     where: { id: objectiveId },
@@ -843,7 +886,7 @@ export async function deleteObjective(
     include: { project: { select: { userId: true } } },
   });
   if (!objective) throw new Error('Objective not found');
-  if (objective.project.userId !== userId) throw new Error('Unauthorized');
+  await assertCanEditQuest(objective.projectId, userId);
 
   await prisma.objective.delete({ where: { id: objectiveId } });
 }
@@ -865,7 +908,7 @@ export async function renameInventoryItem(
     include: { project: { select: { userId: true } } },
   });
   if (!item) throw new Error('Item not found');
-  if (item.project.userId !== userId) throw new Error('Unauthorized');
+  await assertCanEditQuest(item.projectId, userId);
 
   return prisma.inventoryItem.update({
     where: { id: itemId },
@@ -890,7 +933,7 @@ export async function deleteInventoryItem(
     include: { project: { select: { userId: true } } },
   });
   if (!item) throw new Error('Item not found');
-  if (item.project.userId !== userId) throw new Error('Unauthorized');
+  await assertCanEditQuest(item.projectId, userId);
 
   await prisma.inventoryItem.delete({ where: { id: itemId } });
 }
@@ -934,11 +977,38 @@ export async function setDifficulty(
     select: { userId: true },
   });
   if (!project) throw new Error('Project not found');
-  if (project.userId !== userId) throw new Error('Unauthorized');
+  // Owner, or a member when the owner allows member edits.
+  await assertCanEditQuest(projectId, userId);
 
   return prisma.project.update({
     where: { id: projectId },
     data: { difficulty },
+  });
+}
+
+/** Owner-only: toggle whether accepted members may edit this shared quest. */
+export async function setMemberPermissions(
+  input: z.infer<typeof setMemberPermissionsSchema>,
+): Promise<Project> {
+  const userId = await requireUserId();
+
+  const parsed = setMemberPermissionsSchema.safeParse(input);
+  if (!parsed.success) {
+    throw new Error(parsed.error.issues[0]?.message ?? 'Invalid input');
+  }
+
+  const { projectId, membersCanEdit } = parsed.data;
+
+  const project = await prisma.project.findUnique({
+    where: { id: projectId },
+    select: { userId: true },
+  });
+  if (!project) throw new Error('Project not found');
+  if (project.userId !== userId) throw new Error('Unauthorized');
+
+  return prisma.project.update({
+    where: { id: projectId },
+    data: { membersCanEdit },
   });
 }
 
@@ -960,7 +1030,8 @@ export async function setTags(
     select: { userId: true },
   });
   if (!project) throw new Error('Project not found');
-  if (project.userId !== userId) throw new Error('Unauthorized');
+  // Owner, or a member when the owner allows member edits.
+  await assertCanEditQuest(projectId, userId);
 
   return prisma.project.update({
     where: { id: projectId },
@@ -985,7 +1056,8 @@ export async function setQuestTiming(
     select: { userId: true },
   });
   if (!project) throw new Error('Project not found');
-  if (project.userId !== userId) throw new Error('Unauthorized');
+  // Owner, or a member when the owner allows member edits.
+  await assertCanEditQuest(projectId, userId);
 
   return prisma.project.update({
     where: { id: projectId },
@@ -1014,7 +1086,8 @@ export async function updateProjectIcon(input: {
     select: { userId: true },
   });
   if (!project) throw new Error('Project not found');
-  if (project.userId !== userId) throw new Error('Unauthorized');
+  // Owner, or a member when the owner allows member edits.
+  await assertCanEditQuest(projectId, userId);
 
   return prisma.project.update({
     where: { id: projectId },

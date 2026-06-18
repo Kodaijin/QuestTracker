@@ -22,6 +22,7 @@ import {
   setDifficulty,
   setTags,
   setQuestTiming,
+  setMemberPermissions,
   deleteProject,
 } from '@/app/actions/projects';
 import type { ProjectWithRelations } from '@/app/actions/projects';
@@ -48,6 +49,7 @@ import { SparkleBurst, QuestCompleteEffect } from '@/components/QuestEffects';
 interface Props {
   initialProjects: ProjectWithRelations[];
   projectId: string;
+  currentUserId: string;
 }
 
 const WEEKDAY_OPTIONS = [
@@ -70,7 +72,7 @@ function toDateInputValue(d: Date | string | null): string {
   return `${y}-${m}-${day}`;
 }
 
-export default function ProjectWorkspace({ initialProjects, projectId }: Props) {
+export default function ProjectWorkspace({ initialProjects, projectId, currentUserId }: Props) {
   const router = useRouter();
   const hydrate = useProjectStore((s) => s.hydrate);
   const storeProjects = useProjectStore((s) => s.projects);
@@ -143,6 +145,7 @@ export default function ProjectWorkspace({ initialProjects, projectId }: Props) 
   const [tagDraft, setTagDraft] = useState('');
   const [isSavingTags, startSaveTags] = useTransition();
   const [isSavingTiming, startSaveTiming] = useTransition();
+  const [isSavingPerms, startSavePerms] = useTransition();
 
   // ── Sub-quest (epic) management state ───────────────────────────────────────────
   const [newSubQuestTitle, setNewSubQuestTitle] = useState('');
@@ -169,6 +172,16 @@ export default function ProjectWorkspace({ initialProjects, projectId }: Props) 
   }, [project, schedInitialised]);
 
   if (!project) return null;
+
+  // ── Sharing & permissions ───────────────────────────────────────────────────────
+  // The workspace only ever shows quests the viewer owns or has accepted, so a
+  // non-owner here is always an accepted member.
+  const isOwner = project.userId === currentUserId;
+  const acceptedMembers = (project.members ?? []).filter((m) => m.status === 'ACCEPTED');
+  const isSharedQuest = (project.members ?? []).length > 0;
+  // Owner always; members only when the owner allows it. Checking progress off is
+  // always allowed (handled separately) — this gates structural edits & settings.
+  const canEdit = isOwner || project.membersCanEdit;
 
   // ── Hierarchy: epic / sub-quest / standalone ────────────────────────────────────
   const isEpic = project.isEpic;
@@ -288,6 +301,17 @@ export default function ProjectWorkspace({ initialProjects, projectId }: Props) 
   function handleRemoveTag(tag: string) {
     if (!project) return;
     persistTags(project.tags.filter((t) => t !== tag));
+  }
+
+  function handleToggleMemberPerms(next: boolean) {
+    startSavePerms(async () => {
+      try {
+        await setMemberPermissions({ projectId, membersCanEdit: next });
+        router.refresh();
+      } catch {
+        /* best-effort; refresh will resync */
+      }
+    });
   }
 
   function handleSetTiming(nextAvailableDate: string, nextDeadlineDate: string) {
@@ -637,13 +661,15 @@ export default function ProjectWorkspace({ initialProjects, projectId }: Props) 
             >
               {project.title}
             </h1>
-            <button
-              onClick={beginEditTitle}
-              aria-label="Rename quest"
-              className="opacity-0 group-hover:opacity-100 transition-opacity text-zinc-500 hover:text-indigo-400"
-            >
-              ✏
-            </button>
+            {canEdit && (
+              <button
+                onClick={beginEditTitle}
+                aria-label="Rename quest"
+                className="opacity-0 group-hover:opacity-100 transition-opacity text-zinc-500 hover:text-indigo-400"
+              >
+                ✏
+              </button>
+            )}
           </div>
         )}
 
@@ -723,7 +749,7 @@ export default function ProjectWorkspace({ initialProjects, projectId }: Props) 
             <IconPicker
               value={project.icon}
               onChange={handleIconChange}
-              disabled={isSavingIcon}
+              disabled={isSavingIcon || !canEdit}
             />
           </div>
           {iconError && <p className="mt-1 text-sm text-red-400">{iconError}</p>}
@@ -740,7 +766,7 @@ export default function ProjectWorkspace({ initialProjects, projectId }: Props) 
                 key={d.value}
                 type="button"
                 onClick={() => handleSetDifficulty(d.value)}
-                disabled={isSavingDifficulty}
+                disabled={isSavingDifficulty || !canEdit}
                 aria-pressed={project.difficulty === d.value}
                 className={cn(
                   'inline-flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-sm font-medium transition-all disabled:opacity-60',
@@ -771,7 +797,7 @@ export default function ProjectWorkspace({ initialProjects, projectId }: Props) 
                 <button
                   type="button"
                   onClick={() => handleRemoveTag(t)}
-                  disabled={isSavingTags}
+                  disabled={isSavingTags || !canEdit}
                   aria-label={`Remove tag ${t}`}
                   className="text-indigo-400 hover:text-indigo-200 disabled:opacity-50"
                 >
@@ -779,22 +805,27 @@ export default function ProjectWorkspace({ initialProjects, projectId }: Props) 
                 </button>
               </span>
             ))}
-            <input
-              id="ws-tag"
-              type="text"
-              value={tagDraft}
-              onChange={(e) => setTagDraft(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter' || e.key === ',') {
-                  e.preventDefault();
-                  handleAddTag();
-                }
-              }}
-              onBlur={handleAddTag}
-              disabled={isSavingTags}
-              placeholder="+ tag"
-              className="field max-w-[8rem] py-1 text-sm"
-            />
+            {canEdit && (
+              <input
+                id="ws-tag"
+                type="text"
+                value={tagDraft}
+                onChange={(e) => setTagDraft(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' || e.key === ',') {
+                    e.preventDefault();
+                    handleAddTag();
+                  }
+                }}
+                onBlur={handleAddTag}
+                disabled={isSavingTags}
+                placeholder="+ tag"
+                className="field max-w-[8rem] py-1 text-sm"
+              />
+            )}
+            {project.tags.length === 0 && !canEdit && (
+              <span className="text-xs text-zinc-500">No tags</span>
+            )}
           </div>
         </div>
 
@@ -810,7 +841,7 @@ export default function ProjectWorkspace({ initialProjects, projectId }: Props) 
                 type="date"
                 value={toDateInputValue(project.availableAt)}
                 onChange={(e) => handleSetTiming(e.target.value, toDateInputValue(project.deadline))}
-                disabled={isSavingTiming}
+                disabled={isSavingTiming || !canEdit}
                 className="field"
               />
             </div>
@@ -823,7 +854,7 @@ export default function ProjectWorkspace({ initialProjects, projectId }: Props) 
                 type="date"
                 value={toDateInputValue(project.deadline)}
                 onChange={(e) => handleSetTiming(toDateInputValue(project.availableAt), e.target.value)}
-                disabled={isSavingTiming}
+                disabled={isSavingTiming || !canEdit}
                 className="field"
               />
             </div>
@@ -840,6 +871,41 @@ export default function ProjectWorkspace({ initialProjects, projectId }: Props) 
           <Progress value={pct} />
         </div>
       </div>
+
+      {/* Party (shared quests) — members + owner's edit-permission toggle */}
+      {isSharedQuest && (
+        <Card>
+          <CardHeader>
+            <CardTitle>
+              🧑‍🤝‍🧑 Party · {acceptedMembers.length + 1}
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            {isOwner ? (
+              <label className="flex items-start gap-2.5 cursor-pointer">
+                <Checkbox
+                  checked={project.membersCanEdit}
+                  onCheckedChange={(c) => handleToggleMemberPerms(c === true)}
+                  disabled={isSavingPerms}
+                  aria-label="Let party members edit this quest"
+                />
+                <span className="text-sm text-zinc-300">
+                  Let party members edit this quest
+                  <span className="block text-xs text-zinc-500">
+                    When on, members can add and edit objectives, inventory, and settings. They can always check off progress; only you can delete the quest.
+                  </span>
+                </span>
+              </label>
+            ) : (
+              <p className="text-sm text-zinc-400">
+                {project.membersCanEdit
+                  ? 'You can edit this shared quest — add and check off objectives and inventory.'
+                  : 'You can check off progress on this shared quest. Only the owner can change its objectives and settings.'}
+              </p>
+            )}
+          </CardContent>
+        </Card>
+      )}
 
       {/* Sub-quests (epic only) */}
       {isEpic && (
@@ -1029,22 +1095,24 @@ export default function ProjectWorkspace({ initialProjects, projectId }: Props) 
                       >
                         {obj.title}
                       </span>
-                      <div className="opacity-0 group-hover:opacity-100 transition-opacity flex items-center gap-1">
-                        <button
-                          onClick={() => beginEditObj(obj.id, obj.title)}
-                          aria-label={`Rename "${obj.title}"`}
-                          className="text-zinc-500 hover:text-indigo-400 transition-colors px-1 text-sm"
-                        >
-                          ✏
-                        </button>
-                        <button
-                          onClick={() => handleDeleteObj(obj.id)}
-                          aria-label={`Delete "${obj.title}"`}
-                          className="text-zinc-500 hover:text-red-400 transition-colors px-1 text-sm"
-                        >
-                          ✕
-                        </button>
-                      </div>
+                      {canEdit && (
+                        <div className="opacity-0 group-hover:opacity-100 transition-opacity flex items-center gap-1">
+                          <button
+                            onClick={() => beginEditObj(obj.id, obj.title)}
+                            aria-label={`Rename "${obj.title}"`}
+                            className="text-zinc-500 hover:text-indigo-400 transition-colors px-1 text-sm"
+                          >
+                            ✏
+                          </button>
+                          <button
+                            onClick={() => handleDeleteObj(obj.id)}
+                            aria-label={`Delete "${obj.title}"`}
+                            className="text-zinc-500 hover:text-red-400 transition-colors px-1 text-sm"
+                          >
+                            ✕
+                          </button>
+                        </div>
+                      )}
                     </>
                   )}
                 </li>
@@ -1057,26 +1125,28 @@ export default function ProjectWorkspace({ initialProjects, projectId }: Props) 
             <p className="mt-2 text-sm text-red-400">{objEditError}</p>
           )}
 
-          <form
-            onSubmit={handleAddObjective}
-            className="mt-5 pt-4 border-t border-zinc-800/80 space-y-2"
-          >
-            <div className="flex gap-2">
-              <input
-                type="text"
-                value={newObjTitle}
-                onChange={(e) => setNewObjTitle(e.target.value)}
-                placeholder="Add an objective…"
-                className="field flex-1"
-              />
-              <Button type="submit" disabled={isAddingObj}>
-                {isAddingObj ? 'Adding…' : 'Add'}
-              </Button>
-            </div>
-            {newObjError && (
-              <p className="text-sm text-red-400">{newObjError}</p>
-            )}
-          </form>
+          {canEdit && (
+            <form
+              onSubmit={handleAddObjective}
+              className="mt-5 pt-4 border-t border-zinc-800/80 space-y-2"
+            >
+              <div className="flex gap-2">
+                <input
+                  type="text"
+                  value={newObjTitle}
+                  onChange={(e) => setNewObjTitle(e.target.value)}
+                  placeholder="Add an objective…"
+                  className="field flex-1"
+                />
+                <Button type="submit" disabled={isAddingObj}>
+                  {isAddingObj ? 'Adding…' : 'Add'}
+                </Button>
+              </div>
+              {newObjError && (
+                <p className="text-sm text-red-400">{newObjError}</p>
+              )}
+            </form>
+          )}
         </CardContent>
       </Card>
       )}
@@ -1282,22 +1352,24 @@ export default function ProjectWorkspace({ initialProjects, projectId }: Props) 
                       >
                         {item.name}
                       </span>
-                      <div className="opacity-0 group-hover:opacity-100 transition-opacity flex items-center gap-1 shrink-0">
-                        <button
-                          onClick={() => beginEditItem(item.id, item.name)}
-                          aria-label={`Rename "${item.name}"`}
-                          className="text-zinc-500 hover:text-indigo-400 transition-colors px-1 text-sm"
-                        >
-                          ✏
-                        </button>
-                        <button
-                          onClick={() => handleDeleteItem(item.id)}
-                          aria-label={`Delete "${item.name}"`}
-                          className="text-zinc-500 hover:text-red-400 transition-colors px-1 text-sm"
-                        >
-                          ✕
-                        </button>
-                      </div>
+                      {canEdit && (
+                        <div className="opacity-0 group-hover:opacity-100 transition-opacity flex items-center gap-1 shrink-0">
+                          <button
+                            onClick={() => beginEditItem(item.id, item.name)}
+                            aria-label={`Rename "${item.name}"`}
+                            className="text-zinc-500 hover:text-indigo-400 transition-colors px-1 text-sm"
+                          >
+                            ✏
+                          </button>
+                          <button
+                            onClick={() => handleDeleteItem(item.id)}
+                            aria-label={`Delete "${item.name}"`}
+                            className="text-zinc-500 hover:text-red-400 transition-colors px-1 text-sm"
+                          >
+                            ✕
+                          </button>
+                        </div>
+                      )}
                     </>
                   )}
                 </li>
@@ -1309,26 +1381,28 @@ export default function ProjectWorkspace({ initialProjects, projectId }: Props) 
             <p className="mt-2 text-sm text-red-400">{editItemError}</p>
           )}
 
-          <form
-            onSubmit={handleAddItem}
-            className="mt-5 pt-4 border-t border-zinc-800/80 space-y-2"
-          >
-            <div className="flex gap-2">
-              <input
-                type="text"
-                value={newItemName}
-                onChange={(e) => setNewItemName(e.target.value)}
-                placeholder="Add an item…"
-                className="field flex-1"
-              />
-              <Button type="submit" disabled={isAddingItem}>
-                {isAddingItem ? 'Adding…' : 'Add'}
-              </Button>
-            </div>
-            {newItemError && (
-              <p className="text-sm text-red-400">{newItemError}</p>
-            )}
-          </form>
+          {canEdit && (
+            <form
+              onSubmit={handleAddItem}
+              className="mt-5 pt-4 border-t border-zinc-800/80 space-y-2"
+            >
+              <div className="flex gap-2">
+                <input
+                  type="text"
+                  value={newItemName}
+                  onChange={(e) => setNewItemName(e.target.value)}
+                  placeholder="Add an item…"
+                  className="field flex-1"
+                />
+                <Button type="submit" disabled={isAddingItem}>
+                  {isAddingItem ? 'Adding…' : 'Add'}
+                </Button>
+              </div>
+              {newItemError && (
+                <p className="text-sm text-red-400">{newItemError}</p>
+              )}
+            </form>
+          )}
         </CardContent>
       </Card>
       )}

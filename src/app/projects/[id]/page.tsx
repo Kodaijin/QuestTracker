@@ -1,4 +1,6 @@
 import { notFound, redirect } from 'next/navigation';
+import { getServerSession } from 'next-auth';
+import { authOptions } from '@/lib/auth';
 import { getProjectsForUser, syncRecurringQuests } from '@/app/actions/projects';
 import ProjectWorkspace from '@/components/ProjectWorkspace';
 
@@ -16,5 +18,13 @@ export default async function ProjectPage({
 
   if (!projects.find((p) => p.id === params.id)) notFound();
 
-  return <ProjectWorkspace initialProjects={projects} projectId={params.id} />;
+  const session = await getServerSession(authOptions);
+
+  return (
+    <ProjectWorkspace
+      initialProjects={projects}
+      projectId={params.id}
+      currentUserId={session!.user.id}
+    />
+  );
 }

@@ -161,6 +161,9 @@ model Project {
   tags            String[]       @default([])
   isEpic          Boolean        @default(false)
   sequential      Boolean        @default(false)
+  // For shared (party) quests: whether accepted members may edit the quest
+  // (add/edit objectives & inventory, change settings). Deleting stays owner-only.
+  membersCanEdit  Boolean        @default(true)
   parentId        String?
   epicOrder       Int?
   user            User           @relation(fields: [userId], references: [id], onDelete: Cascade)

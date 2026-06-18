@@ -93,6 +93,7 @@ export default function DashboardClient({
 
   // ── Party sharing state ───────────────────────────────────────────────────────
   const [selectedMemberIds, setSelectedMemberIds] = useState<string[]>([]);
+  const [membersCanEdit, setMembersCanEdit] = useState(true);
 
   // ── Epic state ──────────────────────────────────────────────────────────────
   const [isEpic, setIsEpic] = useState(false);
@@ -181,6 +182,7 @@ export default function DashboardClient({
     setError(null);
     setShowForm(false);
     setSelectedMemberIds([]);
+    setMembersCanEdit(true);
     setIsEpic(false);
     setSequential(false);
     setSubQuests(['']);
@@ -252,6 +254,7 @@ export default function DashboardClient({
           availableAt: buildAvailableAtISO(),
           deadline: buildDeadlineISO(),
           memberIds: selectedMemberIds,
+          membersCanEdit,
           ...recurrencePayload,
         });
         resetForm();
@@ -830,6 +833,23 @@ export default function DashboardClient({
                   <p className="mt-1.5 text-xs text-zinc-500">
                     Invited allies must accept on their <span className="text-zinc-400">Party</span> page before the quest appears on their board.
                   </p>
+
+                  {selectedMemberIds.length > 0 && (
+                    <label className="mt-3 flex items-start gap-2 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={membersCanEdit}
+                        onChange={(e) => setMembersCanEdit(e.target.checked)}
+                        className="mt-0.5 h-4 w-4 rounded border-zinc-600 bg-zinc-800 text-emerald-500 focus:ring-emerald-500/40"
+                      />
+                      <span className="text-sm text-zinc-300">
+                        Let party members edit this quest
+                        <span className="block text-xs text-zinc-500">
+                          Members can add and edit objectives, inventory, and settings. They can always check off progress; only you can delete the quest.
+                        </span>
+                      </span>
+                    </label>
+                  )}
                 </div>
               )}
                 </>

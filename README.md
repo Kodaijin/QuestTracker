@@ -21,7 +21,7 @@ Built with Next.js (App Router), Prisma, PostgreSQL, and NextAuth — fully cont
 - **Achievements** — 50+ cheeky badges (including streak milestones) unlocked just by using the app, tracked per user and never revoked once earned
 - **Completion effects** — sparkle-and-glow feedback when you check an objective, and a golden "Quest Complete!" celebration when a quest is finished (respects `prefers-reduced-motion`)
 - **Recurring quests** — daily, weekly, every N weeks, monthly, or a specific date; elapsed quests advance automatically on load
-- **Party & group quests** (`/party`) — add allies by unique username (they accept or decline), then share a quest with chosen allies when you create it. Invited heroes accept the quest per-invite; once joined, the party shares the same progress and **every member earns XP** when it's completed. Either ally can **remove** the other at any time, which also severs their shared-quest memberships in both directions. A notice badge in the nav surfaces pending ally requests and quest invites
+- **Party & group quests** (`/party`) — add allies by unique username (they accept or decline), then share a quest with chosen allies when you create it. Invited heroes accept the quest per-invite; once joined, the party shares the same progress and **every member earns XP** when it's completed. Members can always check off shared progress, and the owner can **allow members to edit** the quest too (add/edit objectives, inventory, and settings) via a per-quest toggle — only the owner can delete it. Either ally can **remove** the other at any time, which also severs their shared-quest memberships in both directions. A notice badge in the nav surfaces pending ally requests and quest invites
 - **Companion pet** — adopt a companion (dragon, fox spirit, or slime) on your hero page that **evolves as you level up** (Egg → Hatchling → Juvenile → Adult → Mythic) and reacts to your streak with a mood; evolutions get their own celebration
 - **Reminders** (`/notifications`) — opt-in **web push** notifications (delivered even when the app is closed) plus an in-app alert center for come-back nudges, streak-at-risk warnings, approaching quest deadlines, and a "your companion misses you" poke. Per-type toggles and a daily reminder time live in Settings
 - **Authentication** — email/password accounts via NextAuth, each with a unique username for party invites and a security-question password reset flow
@@ -118,7 +118,7 @@ See `.env.example` for a complete template. **Note:** web push requires HTTPS in
 - **CompletionEvent** — an append-only log of every objective/item/quest completion (with awarded XP and timestamp); the source of truth for XP, levels, streaks, and insights
 - **UnlockedAchievement** — records which achievement a user has earned and when (unique per user + achievement key)
 - **Connection** — a hero-to-hero ally link between a requester and addressee, with a pending/accepted/declined status (one per pair)
-- **QuestMember** — a per-quest invite linking a quest to an invited user (the owner stays `Project.userId`), with a pending/accepted/declined status; accepted members share progress and earn XP
+- **QuestMember** — a per-quest invite linking a quest to an invited user (the owner stays `Project.userId`), with a pending/accepted/declined status; accepted members share progress and earn XP. `Project.membersCanEdit` controls whether accepted members may edit the quest (vs. only check off progress)
 - **Pet** — a user's companion (species + name); its stage and mood are derived at read time from level and streak, so nothing else is stored
 - **PushSubscription** — a browser Web Push endpoint registered by a user for notifications
 - **Notification** — in-app alert history and the source of truth for push de-duplication (unique per user + type + key)
@@ -129,6 +129,10 @@ See `.env.example` for a complete template. **Note:** web push requires HTTPS in
 ### 2026-06-17 — Reverse-proxy / Cloudflare Tunnel support
 
 - **`ALLOWED_ORIGINS`** env var feeding Next's `serverActions.allowedOrigins`, so mutations no longer return 500 when the proxy forwards a `Host` that differs from the browser `Origin`. Passed as a Docker build arg (baked into the standalone build); `NEXTAUTH_URL`'s host is trusted automatically
+
+### 2026-06-17 — Party member editing
+
+- **Member edit permissions** — accepted party members can now add/edit objectives, inventory, and quest settings on a shared quest, gated by a per-quest **owner toggle** (set at creation or on the quest page). Checking off progress is always allowed; deleting the quest stays owner-only. New `Project.membersCanEdit` field
 
 ### 2026-06-17 — Remove allies
 
