@@ -6,6 +6,10 @@ import type { CSSProperties } from 'react';
 const BURST_CHARS = ['✦', '✧', '✶', '⋆'];
 const RISE_CHARS = ['✦', '✧', '✨', '⭐', '🌟', '⋆'];
 
+/** An equipped celebration-particle cosmetic (chars + Tailwind text color). */
+export type ParticleStyle = { chars: string[]; colorClass: string };
+const DEFAULT_RISE: ParticleStyle = { chars: RISE_CHARS, colorClass: 'text-amber-300' };
+
 type BurstParticle = { dx: number; dy: number; delay: number; char: string };
 type RiseParticle = { left: number; delay: number; size: number; char: string };
 
@@ -54,13 +58,19 @@ export function SparkleBurst({ count = 8 }: { count?: number }) {
  * plus a floating toast. Render inside a `position: relative` container (the
  * toast is fixed, so it escapes to the viewport regardless).
  */
-export function QuestCompleteEffect({ count = 18 }: { count?: number }) {
+export function QuestCompleteEffect({
+  count = 18,
+  particle = DEFAULT_RISE,
+}: {
+  count?: number;
+  particle?: ParticleStyle;
+}) {
   const [particles] = useState<RiseParticle[]>(() =>
     Array.from({ length: count }, () => ({
       left: Math.random() * 100,
       delay: Math.random() * 0.7,
       size: 0.7 + Math.random() * 0.8,
-      char: RISE_CHARS[Math.floor(Math.random() * RISE_CHARS.length)],
+      char: particle.chars[Math.floor(Math.random() * particle.chars.length)],
     })),
   );
 
@@ -74,7 +84,7 @@ export function QuestCompleteEffect({ count = 18 }: { count?: number }) {
         {particles.map((p, i) => (
           <span
             key={i}
-            className="sparkle-rise-particle leading-none text-amber-300"
+            className={`sparkle-rise-particle leading-none ${particle.colorClass}`}
             style={{
               left: `${p.left}%`,
               fontSize: `${p.size}rem`,
@@ -104,13 +114,21 @@ export function QuestCompleteEffect({ count = 18 }: { count?: number }) {
  * prominent toast announcing the new level and rank title. Mount it keyed by a
  * nonce so it remounts (and re-animates) on each level gain; it auto-fades.
  */
-export function LevelUpEffect({ level, title }: { level: number; title: string }) {
+export function LevelUpEffect({
+  level,
+  title,
+  particle = DEFAULT_RISE,
+}: {
+  level: number;
+  title: string;
+  particle?: ParticleStyle;
+}) {
   const [particles] = useState<RiseParticle[]>(() =>
     Array.from({ length: 28 }, () => ({
       left: Math.random() * 100,
       delay: Math.random() * 0.8,
       size: 0.8 + Math.random() * 1.1,
-      char: RISE_CHARS[Math.floor(Math.random() * RISE_CHARS.length)],
+      char: particle.chars[Math.floor(Math.random() * particle.chars.length)],
     })),
   );
 
@@ -121,7 +139,7 @@ export function LevelUpEffect({ level, title }: { level: number; title: string }
         {particles.map((p, i) => (
           <span
             key={i}
-            className="sparkle-rise-particle leading-none text-amber-300"
+            className={`sparkle-rise-particle leading-none ${particle.colorClass}`}
             style={{
               left: `${p.left}%`,
               fontSize: `${p.size}rem`,

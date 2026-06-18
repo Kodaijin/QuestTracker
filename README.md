@@ -24,6 +24,7 @@ Built with Next.js (App Router), Prisma, PostgreSQL, and NextAuth — fully cont
 - **Party & group quests** (`/party`) — add allies by unique username (they accept or decline), then share a quest with chosen allies when you create it. Invited heroes accept the quest per-invite; once joined, the party shares the same progress and **every member earns XP** when it's completed. Members can always check off shared progress, and the owner can **allow members to edit** the quest too (add/edit objectives, inventory, and settings) via a per-quest toggle — only the owner can delete it. Either ally can **remove** the other at any time, which also severs their shared-quest memberships in both directions. A notice badge in the nav surfaces pending ally requests and quest invites
 - **Companion pet** — adopt a companion from a wide roster (cat, dragon, fox spirit, dog, owl, penguin, unicorn, and many more) on your hero page that **evolves as you level up** (Egg → Hatchling → Juvenile → Adult → Mythic) and reacts to your streak with a mood; evolutions get their own celebration
 - **Reminders** (`/notifications`) — opt-in **web push** notifications (delivered even when the app is closed) plus an in-app alert center for come-back nudges, streak-at-risk warnings, approaching quest deadlines, and a "your companion misses you" poke. Per-type toggles and a daily reminder time live in Settings
+- **Quest Gems & Shop** (`/shop`) — earn 💎 gems by leveling up, unlocking achievements, and hitting streak milestones, then spend them on cosmetics: app-wide **color themes**, animated **XP-bar styles**, **frames & glows** for your hero panel, and **celebration particle** styles. The gem balance is derived from your (farm-proof) progress, so it can't be cheesed by toggling quests. A gem-balance chip lives in the nav
 - **Authentication** — email/password accounts via NextAuth, each with a unique username for party invites and a security-question password reset flow
 - **Custom icons** — upload and auto-resize quest icons
 
@@ -123,8 +124,15 @@ See `.env.example` for a complete template. **Note:** web push requires HTTPS in
 - **PushSubscription** — a browser Web Push endpoint registered by a user for notifications
 - **Notification** — in-app alert history and the source of truth for push de-duplication (unique per user + type + key)
 - **NotificationPreference** — per-user reminder toggles and the daily reminder hour
+- **CosmeticUnlock** — a cosmetic the user has bought with gems (ownership only); the gem balance is derived as `earned − sum(owned prices)`, never stored as a counter. Equipped selections live on `User` (`themeId`/`xpBarId`/`frameId`/`particleId`); the catalog and economy are code-defined in `src/lib/cosmetics.ts`
 
 ## Changelog
+
+### 2026-06-18 — Quest Gems & cosmetic Shop
+
+- **Quest Gems** currency, earned from level-ups, achievements, and streak milestones; balance is derived from progress (farm-proof), not a stored counter
+- **Shop** (`/shop`) to buy and equip cosmetics: color themes, XP-bar styles, frames & glows, and level-up particle styles, with live previews and a nav gem-balance chip
+- Themes recolor the app accent via a CSS-variable layer applied server-side (no flash); new `CosmeticUnlock` model + equipped-cosmetic columns on `User`
 
 ### 2026-06-17 — Reverse-proxy / Cloudflare Tunnel support
 

@@ -6,6 +6,8 @@ import { getProgression, type Progression } from '@/app/actions/progression';
 import { getPetStatus, type PetStatus } from '@/app/actions/pet';
 import { dayKey } from '@/lib/progression';
 import { MOOD_META } from '@/lib/pet';
+import { getCosmetic, particleFor } from '@/lib/cosmetics';
+import { useCosmetics } from '@/app/providers';
 import { LevelUpEffect, PetEvolveEffect } from '@/components/QuestEffects';
 import CountUp from '@/components/CountUp';
 
@@ -22,6 +24,11 @@ interface Props {
  * Links to the Hero profile. Self-contained so it can be dropped on any page.
  */
 export default function ProgressionHeader({ initial, refreshSignal = 0 }: Props) {
+  const { equipped } = useCosmetics();
+  const xpBarClass = equipped.xpbar ? getCosmetic(equipped.xpbar)?.className ?? '' : '';
+  const frameClass = equipped.frame ? getCosmetic(equipped.frame)?.className ?? '' : '';
+  const particle = particleFor(equipped.particle);
+
   const [prog, setProg] = useState<Progression | null>(initial ?? null);
   const [levelUpNonce, setLevelUpNonce] = useState(0);
   const prevLevel = useRef<number | null>(initial ? initial.level : null);
@@ -78,7 +85,7 @@ export default function ProgressionHeader({ initial, refreshSignal = 0 }: Props)
     <>
       <Link
         href="/hero"
-        className="group flex items-center gap-4 rounded-xl border border-zinc-800/80 bg-zinc-900/50 px-4 py-3 transition-colors hover:border-amber-500/40"
+        className={`group flex items-center gap-4 rounded-xl border border-zinc-800/80 bg-zinc-900/50 px-4 py-3 transition-colors hover:border-amber-500/40 ${frameClass}`}
         aria-label="View your hero profile"
       >
         {/* Level badge */}
@@ -86,7 +93,7 @@ export default function ProgressionHeader({ initial, refreshSignal = 0 }: Props)
           <span className="text-[0.6rem] font-semibold uppercase tracking-wide text-amber-400/80">
             Lvl
           </span>
-          <CountUp value={prog.level} className="text-lg font-bold leading-none text-amber-200" />
+          <CountUp value={prog.level} className="text-lg font-bold leading-none accent-text" />
         </div>
 
         {/* XP bar + title */}
@@ -101,7 +108,7 @@ export default function ProgressionHeader({ initial, refreshSignal = 0 }: Props)
           </div>
           <div className="mt-1.5 relative h-2 w-full overflow-hidden rounded-full bg-zinc-800">
             <div
-              className="relative h-full overflow-hidden rounded-full bg-gradient-to-r from-amber-500 to-yellow-400 transition-[width] duration-700 ease-out"
+              className={`relative h-full overflow-hidden rounded-full xp-bar-fill ${xpBarClass} transition-[width] duration-700 ease-out`}
               style={{ width: `${pct}%` }}
             >
               {pct > 0 && (
@@ -148,7 +155,7 @@ export default function ProgressionHeader({ initial, refreshSignal = 0 }: Props)
       </Link>
 
       {levelUpNonce > 0 && (
-        <LevelUpEffect key={levelUpNonce} level={prog.level} title={prog.title} />
+        <LevelUpEffect key={levelUpNonce} level={prog.level} title={prog.title} particle={particle} />
       )}
 
       {petEvolveNonce > 0 && pet && (

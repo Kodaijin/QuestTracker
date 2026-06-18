@@ -9,9 +9,12 @@ import { Card, CardContent } from '@/components/ui/card';
 import LogoutButton from '@/components/LogoutButton';
 import PartyNavLink from '@/components/PartyNavLink';
 import NotificationBell from '@/components/NotificationBell';
+import ShopNavLink from '@/components/ShopNavLink';
 import PetPanel from '@/components/PetPanel';
 import CountUp from '@/components/CountUp';
 import { cn } from '@/lib/utils';
+import { getCosmetic } from '@/lib/cosmetics';
+import { useCosmetics } from '@/app/providers';
 
 interface Props {
   progression: Progression;
@@ -32,6 +35,10 @@ function StatTile({ label, value, accent }: { label: string; value: number; acce
 }
 
 export default function HeroClient({ progression, achievements, stats, petStatus }: Props) {
+  const { equipped } = useCosmetics();
+  const xpBarClass = equipped.xpbar ? getCosmetic(equipped.xpbar)?.className ?? '' : '';
+  const frameClass = equipped.frame ? getCosmetic(equipped.frame)?.className ?? '' : '';
+
   const xpPct =
     progression.xpForNextLevel > 0
       ? Math.min(100, Math.round((progression.xpIntoLevel / progression.xpForNextLevel) * 100))
@@ -53,6 +60,7 @@ export default function HeroClient({ progression, achievements, stats, petStatus
           <span aria-hidden>←</span> Dashboard
         </Link>
         <div className="flex items-center gap-4">
+          <ShopNavLink />
           <NotificationBell />
           <PartyNavLink />
           <LogoutButton />
@@ -60,7 +68,7 @@ export default function HeroClient({ progression, achievements, stats, petStatus
       </div>
 
       {/* Hero banner: level + XP + streak */}
-      <Card className="border-amber-500/30 bg-gradient-to-br from-amber-950/20 to-zinc-900/40 mb-8">
+      <Card className={cn('border-amber-500/30 bg-gradient-to-br from-amber-950/20 to-zinc-900/40 mb-8', frameClass)}>
         <CardContent className="pt-6">
           <div className="flex flex-col sm:flex-row items-center gap-6">
             {/* Level medallion */}
@@ -68,7 +76,7 @@ export default function HeroClient({ progression, achievements, stats, petStatus
               <span className="text-xs font-semibold uppercase tracking-wide text-amber-400/80">
                 Level
               </span>
-              <CountUp value={progression.level} className="text-5xl font-bold leading-none text-amber-200" />
+              <CountUp value={progression.level} className="text-5xl font-bold leading-none accent-text" />
             </div>
 
             {/* Title + XP bar */}
@@ -88,7 +96,7 @@ export default function HeroClient({ progression, achievements, stats, petStatus
                 </div>
                 <div className="relative h-2.5 w-full overflow-hidden rounded-full bg-zinc-800">
                   <div
-                    className="relative h-full overflow-hidden rounded-full bg-gradient-to-r from-amber-500 to-yellow-400 transition-[width] duration-700 ease-out"
+                    className={cn('relative h-full overflow-hidden rounded-full xp-bar-fill transition-[width] duration-700 ease-out', xpBarClass)}
                     style={{ width: `${xpPct}%` }}
                   >
                     {xpPct > 0 && (

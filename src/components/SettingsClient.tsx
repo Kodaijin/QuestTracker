@@ -6,6 +6,7 @@ import { useRouter } from 'next/navigation';
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
 import PartyNavLink from '@/components/PartyNavLink';
 import NotificationBell from '@/components/NotificationBell';
+import ShopNavLink from '@/components/ShopNavLink';
 import {
   changeEmail,
   changeUsername,
@@ -248,6 +249,7 @@ export default function SettingsClient({
           Dashboard
         </Link>
         <div className="flex items-center gap-4">
+          <ShopNavLink />
           <NotificationBell />
           <PartyNavLink />
         </div>

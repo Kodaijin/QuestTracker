@@ -46,6 +46,11 @@ model User {
   createdAt            DateTime               @default(now())
   securityQuestion     String?
   securityAnswerHash   String?
+  // Equipped cosmetic ids (null = default look). See src/lib/cosmetics.ts.
+  themeId              String?
+  xpBarId              String?
+  frameId              String?
+  particleId           String?
   projects             Project[]
   achievements         UnlockedAchievement[]
   completionEvents     CompletionEvent[]
@@ -56,6 +61,20 @@ model User {
   pushSubscriptions    PushSubscription[]
   notifications        Notification[]
   notificationPreference NotificationPreference?
+  cosmetics            CosmeticUnlock[]
+}
+
+// A cosmetic the user has purchased with Quest Gems. Ownership only; the gem
+// balance is derived (earned − sum of owned prices), see src/lib/cosmetics.ts.
+model CosmeticUnlock {
+  id         String   @id @default(cuid())
+  userId     String
+  cosmeticId String
+  createdAt  DateTime @default(now())
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, cosmeticId])
+  @@index([userId])
 }
 
 // A personal companion that evolves with the hero's level and reacts to streaks.

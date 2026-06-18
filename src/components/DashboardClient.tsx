@@ -19,6 +19,7 @@ import { cn } from '@/lib/utils';
 import IconPicker from '@/components/IconPicker';
 import LogoutButton from '@/components/LogoutButton';
 import NotificationBell from '@/components/NotificationBell';
+import ShopNavLink from '@/components/ShopNavLink';
 import CountUp from '@/components/CountUp';
 import ProgressionHeader from '@/components/ProgressionHeader';
 
@@ -562,6 +563,7 @@ export default function DashboardClient({
           >
             🏆 Achievements
           </Link>
+          <ShopNavLink variant="pill" />
           <NotificationBell variant="pill" />
           <Link
             href="/party"

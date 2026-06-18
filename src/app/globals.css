@@ -5,6 +5,39 @@
 @layer base {
   :root {
     color-scheme: dark;
+
+    /* Accent palette — themable via cosmetic color themes ([data-theme]).
+       Defaults preserve the original gold XP bar + indigo ambient tint. */
+    --accent-from: #f59e0b;            /* XP bar gradient start */
+    --accent-to: #facc15;              /* XP bar gradient end */
+    --accent-solid: #fcd34d;           /* accent text (e.g. level number) */
+    --accent-radial: rgba(99, 102, 241, 0.14); /* html ambient tint */
+  }
+
+  /* ── Cosmetic color themes (recolor the app accent) ── */
+  [data-theme='frostbite'] {
+    --accent-from: #0ea5e9; --accent-to: #22d3ee; --accent-solid: #7dd3fc;
+    --accent-radial: rgba(56, 189, 248, 0.16);
+  }
+  [data-theme='verdant'] {
+    --accent-from: #10b981; --accent-to: #34d399; --accent-solid: #6ee7b7;
+    --accent-radial: rgba(52, 211, 153, 0.15);
+  }
+  [data-theme='royal'] {
+    --accent-from: #8b5cf6; --accent-to: #a78bfa; --accent-solid: #c4b5fd;
+    --accent-radial: rgba(167, 139, 250, 0.16);
+  }
+  [data-theme='sakura'] {
+    --accent-from: #ec4899; --accent-to: #fb7185; --accent-solid: #f9a8d4;
+    --accent-radial: rgba(244, 114, 182, 0.16);
+  }
+  [data-theme='abyss'] {
+    --accent-from: #14b8a6; --accent-to: #2dd4bf; --accent-solid: #5eead4;
+    --accent-radial: rgba(45, 212, 191, 0.15);
+  }
+  [data-theme='crimson'] {
+    --accent-from: #ef4444; --accent-to: #fb7185; --accent-solid: #fca5a5;
+    --accent-radial: rgba(248, 113, 113, 0.16);
   }
 
   html {
@@ -13,7 +46,7 @@
     background-color: #09090b;
     background-image: radial-gradient(
       48rem 36rem at 50% -8%,
-      rgba(99, 102, 241, 0.14),
+      var(--accent-radial),
       transparent 60%
     );
     background-attachment: fixed;
@@ -220,6 +253,81 @@
   transition: transform 0.7s ease;
 }
 
+/* ── Cosmetics: themed accent + XP-bar styles + frames ────────────────────── */
+
+/* Accent-colored text (e.g. the level number) — follows the active theme. */
+.accent-text {
+  color: var(--accent-solid);
+}
+
+/* Base XP-bar fill: gradient driven by the active theme's accent vars. */
+.xp-bar-fill {
+  background-image: linear-gradient(to right, var(--accent-from), var(--accent-to));
+}
+
+/* XP-bar style: Quicksilver — silver fill, faster shimmer sweep. */
+.xpbar-quicksilver {
+  background-image: linear-gradient(to right, #9ca3af, #e5e7eb);
+}
+.xpbar-quicksilver .progress-shimmer {
+  animation-duration: 0.9s;
+}
+
+/* XP-bar style: Pulse Glow — breathing glow around the fill. */
+@keyframes xpbar-pulse {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(255, 255, 255, 0); }
+  50%      { box-shadow: 0 0 14px 1px var(--accent-from); }
+}
+.xpbar-pulse {
+  animation: xpbar-pulse 1.8s ease-in-out infinite;
+}
+
+/* XP-bar style: Starfield — deep gradient with drifting twinkles. */
+.xpbar-starfield {
+  background-image:
+    radial-gradient(1px 1px at 20% 40%, rgba(255, 255, 255, 0.9), transparent 60%),
+    radial-gradient(1px 1px at 60% 70%, rgba(255, 255, 255, 0.8), transparent 60%),
+    radial-gradient(1px 1px at 85% 30%, rgba(255, 255, 255, 0.85), transparent 60%),
+    linear-gradient(to right, #4338ca, #0ea5e9);
+  background-size: 120px 100%, 120px 100%, 120px 100%, 100% 100%;
+  animation: xpbar-stars 6s linear infinite;
+}
+@keyframes xpbar-stars {
+  0%   { background-position: 0 0, 0 0, 0 0, 0 0; }
+  100% { background-position: 120px 0, 120px 0, 120px 0, 0 0; }
+}
+
+/* XP-bar style: Rainbow Flow — a flowing rainbow gradient. */
+.xpbar-rainbow {
+  background-image: linear-gradient(
+    90deg, #f87171, #fbbf24, #34d399, #38bdf8, #a78bfa, #f472b6, #f87171
+  );
+  background-size: 200% 100%;
+  animation: xpbar-rainbow 3s linear infinite;
+}
+@keyframes xpbar-rainbow {
+  0%   { background-position: 0% 0; }
+  100% { background-position: 200% 0; }
+}
+
+/* Frames & glows: decorative border + glow on the hero / progression panel. */
+.frame-gilded {
+  border-color: rgba(245, 158, 11, 0.6) !important;
+  box-shadow: 0 0 22px -6px rgba(251, 191, 36, 0.65);
+}
+.frame-frost {
+  border-color: rgba(56, 189, 248, 0.6) !important;
+  box-shadow: 0 0 22px -6px rgba(56, 189, 248, 0.65);
+}
+.frame-vines {
+  border-color: rgba(52, 211, 153, 0.6) !important;
+  box-shadow: 0 0 22px -6px rgba(52, 211, 153, 0.65);
+}
+.frame-void {
+  border-color: rgba(167, 139, 250, 0.7) !important;
+  box-shadow: 0 0 30px -4px rgba(124, 58, 237, 0.75);
+}
+
 /* Respect users who prefer reduced motion: drop the movement, keep things readable. */
 @media (prefers-reduced-motion: reduce) {
   .animate-objective-glow,
@@ -230,7 +338,10 @@
   .aurora-blob,
   .mote,
   .animate-card-enter,
-  .progress-shimmer {
+  .progress-shimmer,
+  .xpbar-pulse,
+  .xpbar-starfield,
+  .xpbar-rainbow {
     animation: none !important;
   }
   .sparkle-burst-particle,
