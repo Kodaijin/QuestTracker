@@ -131,6 +131,10 @@ See `.env.example` for a complete template. Note that web push requires HTTPS in
 
 ## Changelog
 
+### 2026-06-18: Settings button in the corner
+
+- The settings gear now sits fixed in the top-right corner of every page for signed-in users, rendered once in the root layout, instead of living in the dashboard nav row
+
 ### 2026-06-18: More backgrounds and WebGL celebration effects
 
 - Eight new shader backgrounds: Mystic Fireflies, Ocean Abyss, Ember, Galaxy Spiral, Sakura Drift, Synthwave, Constellations, and Rainstorm

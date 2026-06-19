@@ -576,12 +576,6 @@ export default function DashboardClient({
               </span>
             )}
           </Link>
-          <Link
-            href="/settings"
-            className="inline-flex items-center rounded-lg border border-zinc-700 bg-zinc-800/60 hover:bg-zinc-700/70 text-zinc-300 hover:text-zinc-100 text-sm font-medium px-3 py-1.5 transition-all"
-          >
-            Settings
-          </Link>
           <LogoutButton />
         </div>
       </div>
