@@ -13,6 +13,7 @@ Built with Next.js (App Router), Prisma, PostgreSQL, and NextAuth, and fully con
   - [Run locally](#run-locally)
 - [Environment variables](#environment-variables)
 - [Scripts](#scripts)
+- [Android app](#android-app)
 - [Data model](#data-model)
 - [Changelog](#changelog)
 - [License](#license)
@@ -42,6 +43,7 @@ Built with Next.js (App Router), Prisma, PostgreSQL, and NextAuth, and fully con
 - **Free cosmetics mode**: if you'd rather skip the gem economy, a Settings toggle unlocks every cosmetic for free, so you can equip any XP bar, frame, celebration effect, or background without earning or spending Quest Gems
 - **Authentication**: email/password accounts via NextAuth, each with a unique username for party invites and a security-question password reset flow
 - **Custom icons**: upload and auto-resize quest icons
+- **Android app**: an optional Capacitor wrapper that connects to any QuestTracker server you enter and reuses the whole web UI. Background notifications use native FCM push, while the website keeps using Web Push. See [Android app](#android-app)
 
 ## Tech stack
 
@@ -108,6 +110,7 @@ npm run dev
 | `VAPID_PUBLIC_KEY` / `VAPID_PRIVATE_KEY` | Web Push keypair for reminders. Generate with `npx web-push generate-vapid-keys --json` |
 | `VAPID_SUBJECT`   | Contact for the push service, a `mailto:` or URL                   |
 | `REMINDER_SWEEP_MINUTES` | How often the reminder scheduler runs, in minutes (`0` disables it; default `15`) |
+| `FCM_SERVICE_ACCOUNT_JSON` | Firebase service-account JSON (single line) for native push in the Android app. Optional; leave empty to disable native push |
 
 See `.env.example` for a complete template. Note that web push requires HTTPS in production (localhost is exempt for development).
 
@@ -126,6 +129,32 @@ See `.env.example` for a complete template. Note that web push requires HTTPS in
 | `npm run smoke`      | Run the database/auth smoke test     |
 | `npm run icons:resize`| Resize quest icons                  |
 
+## Android app
+
+QuestTracker ships an optional Android wrapper built with Capacitor. On first
+launch it asks for your server's address, then loads that live instance in a
+WebView, so it reuses the entire web UI and your existing account. The website
+stays the primary product and is unchanged. The native project lives in
+`android/`, and the first-run server picker is the static page in
+`native/launcher/`.
+
+Build and run it (requires Android Studio with the Android SDK):
+
+```bash
+# Copy the launcher into the native project and sync plugins
+npx cap sync android
+
+# Open in Android Studio, then run on a device or emulator
+npx cap open android
+```
+
+Notifications: the browser and PWA use Web Push, but a WebView needs native push,
+so the app uses Firebase Cloud Messaging. To enable it, create a Firebase project,
+add its `google-services.json` to `android/app/`, and set
+`FCM_SERVICE_ACCOUNT_JSON` on the server. Without it the app still works; you just
+won't get background notifications on the device. FCM is delivered as a second
+channel inside `sendPushToUser`, so reminders reach web and app subscribers alike.
+
 ## Data model
 
 - **User**: owns many projects, completion events, and unlocked achievements. Stores credentials, a unique `username` (used for party invites), and an optional security question
@@ -138,11 +167,18 @@ See `.env.example` for a complete template. Note that web push requires HTTPS in
 - **QuestMember**: a per-quest invite linking a quest to an invited user (the owner stays `Project.userId`), with a pending/accepted/declined status. Accepted members share progress and earn XP. `Project.membersCanEdit` controls whether accepted members may edit the quest or only check off progress
 - **Pet**: a user's companion (species + name). Its stage and mood are derived at read time from level and streak, so nothing else is stored
 - **PushSubscription**: a browser Web Push endpoint registered by a user for notifications
+- **DeviceToken**: a native FCM token registered by the Capacitor Android app, the app-side counterpart to `PushSubscription`
 - **Notification**: in-app alert history and the source of truth for push de-duplication (unique per user + type + key)
 - **NotificationPreference**: per-user reminder toggles and the daily reminder hour
 - **CosmeticUnlock**: a cosmetic the user bought with gems (ownership only). The gem balance is derived as `earned − sum(owned prices)`, never stored as a counter. Equipped selections live on `User` (`themeId`/`xpBarId`/`frameId`/`particleId`/`backgroundId`), and the catalog and economy are code-defined in `src/lib/cosmetics.ts`. Free cosmetics (such as the default backgrounds) can be equipped without a purchase, and the per-user `cosmeticsFree` flag unlocks everything for users who opt out of the gem economy
 
 ## Changelog
+
+### 2026-06-18: Android app (Capacitor)
+
+- An optional Android wrapper built with Capacitor that connects to any QuestTracker server you enter and reuses the whole web UI. The native project is in `android/`, the first-run server picker in `native/launcher/`
+- Native push via FCM as a second channel alongside Web Push: new `DeviceToken` model, `saveDeviceToken` / `deleteDeviceToken` actions, and an FCM branch in `sendPushToUser`. New optional `FCM_SERVICE_ACCOUNT_JSON` env var
+- Settings gains a "Switch server" action and hides the browser-push control when running inside the app
 
 ### 2026-06-18: Settings button in the corner
 

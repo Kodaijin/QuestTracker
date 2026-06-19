@@ -30,9 +30,9 @@ const nextConfig = {
     // Enables src/instrumentation.ts register() — used to start the in-process
     // reminder scheduler on server boot (required flag on Next 14.2).
     instrumentationHook: true,
-    // web-push is Node-only (net/http/https); keep it external so webpack
-    // doesn't try to bundle it (and its proxy-agent deps) into server chunks.
-    serverComponentsExternalPackages: ['web-push'],
+    // web-push and firebase-admin are Node-only; keep them external so webpack
+    // doesn't try to bundle them (and their deps) into server chunks.
+    serverComponentsExternalPackages: ['web-push', 'firebase-admin'],
     // Trust Server Action POSTs whose Origin is the public domain even when the
     // proxy forwards a different Host (otherwise mutations 500 behind a tunnel).
     serverActions: {

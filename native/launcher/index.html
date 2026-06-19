@@ -1,0 +1,142 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <title>QuestTracker</title>
+    <style>
+      :root { color-scheme: dark; }
+      * { box-sizing: border-box; }
+      body {
+        margin: 0;
+        min-height: 100vh;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding: 1.5rem;
+        background:
+          radial-gradient(40rem 30rem at 50% -10%, rgba(99, 102, 241, 0.25), transparent 60%),
+          #09090b;
+        color: #f4f4f5;
+        font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+      }
+      .card {
+        width: 100%;
+        max-width: 26rem;
+        border: 1px solid #27272a;
+        background: rgba(24, 24, 27, 0.7);
+        border-radius: 1rem;
+        padding: 1.75rem;
+        backdrop-filter: blur(8px);
+      }
+      h1 { margin: 0 0 0.25rem; font-size: 1.5rem; }
+      p.sub { margin: 0 0 1.25rem; color: #a1a1aa; font-size: 0.875rem; }
+      label { display: block; font-size: 0.8rem; color: #d4d4d8; margin-bottom: 0.4rem; }
+      input {
+        width: 100%;
+        border: 1px solid #3f3f46;
+        background: rgba(9, 9, 11, 0.6);
+        color: #f4f4f5;
+        border-radius: 0.6rem;
+        padding: 0.7rem 0.8rem;
+        font-size: 1rem;
+      }
+      input:focus { outline: none; border-color: #6366f1; box-shadow: 0 0 0 1px rgba(99, 102, 241, 0.6); }
+      button {
+        width: 100%;
+        margin-top: 1rem;
+        border: none;
+        border-radius: 0.6rem;
+        padding: 0.75rem;
+        font-size: 1rem;
+        font-weight: 600;
+        color: #fff;
+        background: linear-gradient(to bottom, #6366f1, #4f46e5);
+      }
+      button:active { filter: brightness(0.95); }
+      .err { margin-top: 0.75rem; color: #fca5a5; font-size: 0.85rem; min-height: 1.1rem; }
+      .hint { margin-top: 0.9rem; color: #71717a; font-size: 0.75rem; }
+    </style>
+  </head>
+  <body>
+    <main class="card" id="card" hidden>
+      <h1>Connect to your server</h1>
+      <p class="sub">Enter the address of your QuestTracker server.</p>
+      <form id="form">
+        <label for="url">Server URL</label>
+        <input id="url" type="url" inputmode="url" autocomplete="url" placeholder="https://quests.example.com" />
+        <button type="submit">Connect</button>
+        <div class="err" id="err"></div>
+      </form>
+      <p class="hint">Uses HTTPS. Your address is stored only on this device.</p>
+    </main>
+
+    <script>
+      // Native (Capacitor) Preferences when available, else localStorage so the
+      // launcher still works when previewed in a plain browser.
+      const KEY = 'serverUrl';
+      const prefs = window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.Preferences;
+
+      async function getServer() {
+        if (prefs) return (await prefs.get({ key: KEY })).value || '';
+        return localStorage.getItem(KEY) || '';
+      }
+      async function setServer(v) {
+        if (prefs) return prefs.set({ key: KEY, value: v });
+        localStorage.setItem(KEY, v);
+      }
+      async function clearServer() {
+        if (prefs) return prefs.remove({ key: KEY });
+        localStorage.removeItem(KEY);
+      }
+
+      function normalize(raw) {
+        let v = (raw || '').trim();
+        if (!v) return '';
+        if (!/^https?:\/\//i.test(v)) v = 'https://' + v;
+        try {
+          const u = new URL(v);
+          return u.origin + (u.pathname === '/' ? '' : u.pathname);
+        } catch {
+          return '';
+        }
+      }
+
+      function showForm(prefill) {
+        const card = document.getElementById('card');
+        card.hidden = false;
+        const input = document.getElementById('url');
+        if (prefill) input.value = prefill;
+        input.focus();
+      }
+
+      document.getElementById('form').addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const err = document.getElementById('err');
+        err.textContent = '';
+        const url = normalize(document.getElementById('url').value);
+        if (!url) {
+          err.textContent = 'Enter a valid server address.';
+          return;
+        }
+        await setServer(url);
+        window.location.href = url;
+      });
+
+      (async function init() {
+        const switching = new URLSearchParams(location.search).has('switch');
+        const saved = await getServer();
+        if (switching) {
+          await clearServer();
+          showForm(saved);
+          return;
+        }
+        if (saved) {
+          window.location.href = saved;
+          return;
+        }
+        showForm('');
+      })();
+    </script>
+  </body>
+</html>

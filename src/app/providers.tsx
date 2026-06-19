@@ -4,6 +4,7 @@ import { SessionProvider } from 'next-auth/react';
 import { createContext, useCallback, useContext, useEffect, useState, type ReactNode } from 'react';
 import { getCosmeticsState, type CosmeticsState } from '@/app/actions/cosmetics';
 import { getCosmetic, DEFAULT_EQUIPPED, type EquippedCosmetics } from '@/lib/cosmetics';
+import NativeBridge from '@/components/NativeBridge';
 
 interface CosmeticsContextValue {
   equipped: EquippedCosmetics;
@@ -70,7 +71,10 @@ function CosmeticsProvider({ children }: { children: ReactNode }) {
 export function Providers({ children }: { children: ReactNode }) {
   return (
     <SessionProvider>
-      <CosmeticsProvider>{children}</CosmeticsProvider>
+      <CosmeticsProvider>
+        <NativeBridge />
+        {children}
+      </CosmeticsProvider>
     </SessionProvider>
   );
 }

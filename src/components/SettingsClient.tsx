@@ -1,8 +1,9 @@
 'use client';
 
-import { useState, useTransition } from 'react';
+import { useEffect, useState, useTransition } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
+import { isNative, switchServer } from '@/lib/native';
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
 import PartyNavLink from '@/components/PartyNavLink';
 import NotificationBell from '@/components/NotificationBell';
@@ -67,6 +68,11 @@ export default function SettingsClient({
   notificationPrefs,
 }: Props) {
   const router = useRouter();
+
+  // Only true inside the Capacitor native app (resolved after mount to avoid a
+  // hydration mismatch, since the server always renders the browser case).
+  const [isNativeApp, setIsNativeApp] = useState(false);
+  useEffect(() => setIsNativeApp(isNative()), []);
 
   // ── Notifications state ────────────────────────────────────────────────────────
   const [prefs, setPrefs] = useState<NotificationPrefs>(notificationPrefs);
@@ -271,31 +277,36 @@ export default function SettingsClient({
             </p>
           </CardHeader>
           <CardContent className="pt-6 space-y-5">
-            {/* Enable push on this device */}
-            <div className="flex items-center justify-between gap-3">
-              <div>
-                <p className="text-sm font-medium text-zinc-200">Browser push</p>
-                <p className="text-xs text-zinc-500">
-                  Enable notifications on this device — they arrive even when the app is closed.
-                </p>
-              </div>
-              <button
-                type="button"
-                onClick={handleEnablePush}
-                disabled={pushPending}
-                className="flex-shrink-0 rounded-lg border border-indigo-500/50 bg-indigo-950/40 hover:bg-indigo-900/40 text-indigo-200 text-sm font-medium px-4 py-2 transition-all disabled:opacity-60"
-              >
-                {pushPending ? 'Enabling…' : 'Enable push'}
-              </button>
-            </div>
-            {pushMessage &&
-              (pushMessage.ok ? (
-                <SuccessBox message={pushMessage.text} />
-              ) : (
-                <ErrorBox message={pushMessage.text} />
-              ))}
+            {/* Browser push enrollment. In the native app, push is registered
+                automatically on launch (FCM), so this web-only control is hidden. */}
+            {!isNativeApp && (
+              <>
+                <div className="flex items-center justify-between gap-3">
+                  <div>
+                    <p className="text-sm font-medium text-zinc-200">Browser push</p>
+                    <p className="text-xs text-zinc-500">
+                      Enable notifications on this device. They arrive even when the app is closed.
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={handleEnablePush}
+                    disabled={pushPending}
+                    className="flex-shrink-0 rounded-lg border border-indigo-500/50 bg-indigo-950/40 hover:bg-indigo-900/40 text-indigo-200 text-sm font-medium px-4 py-2 transition-all disabled:opacity-60"
+                  >
+                    {pushPending ? 'Enabling…' : 'Enable push'}
+                  </button>
+                </div>
+                {pushMessage &&
+                  (pushMessage.ok ? (
+                    <SuccessBox message={pushMessage.text} />
+                  ) : (
+                    <ErrorBox message={pushMessage.text} />
+                  ))}
 
-            <div className="h-px bg-zinc-800" />
+                <div className="h-px bg-zinc-800" />
+              </>
+            )}
 
             {/* Master switch */}
             <label className="flex items-center justify-between gap-3 cursor-pointer">
@@ -354,6 +365,27 @@ export default function SettingsClient({
             </button>
           </CardContent>
         </Card>
+
+        {/* ── App (native only) ─────────────────────────────────────────────── */}
+        {isNativeApp && (
+          <Card>
+            <CardHeader>
+              <CardTitle>App</CardTitle>
+              <p className="text-sm text-zinc-400">
+                You&apos;re using the QuestTracker app. Switch to point it at a different server.
+              </p>
+            </CardHeader>
+            <CardContent className="pt-6">
+              <button
+                type="button"
+                onClick={switchServer}
+                className="rounded-lg border border-zinc-700 bg-zinc-800/60 hover:bg-zinc-700/70 text-zinc-200 text-sm font-medium px-4 py-2 transition-all"
+              >
+                Switch server
+              </button>
+            </CardContent>
+          </Card>
+        )}
 
         {/* ── Cosmetics mode ────────────────────────────────────────────────── */}
         <CosmeticsModeToggle />

@@ -5,6 +5,7 @@
 
 import webpush from 'web-push';
 import { prisma } from '@/lib/prisma';
+import { sendFcmToUser } from '@/lib/fcm';
 
 let configured = false;
 
@@ -29,8 +30,21 @@ export interface PushPayload {
   tag?: string;
 }
 
-/** Deliver a payload to every push subscription a user has registered. */
+/**
+ * Deliver a payload to a user across every channel: browser Web Push and native
+ * FCM (the Capacitor app). Each channel guards its own configuration, so one
+ * working without the other is fine. This is the single fan-out point used by
+ * the reminder sweep and any other server-side notification.
+ */
 export async function sendPushToUser(userId: string, payload: PushPayload): Promise<void> {
+  await Promise.all([
+    sendWebPushToUser(userId, payload),
+    sendFcmToUser(userId, payload),
+  ]);
+}
+
+/** Deliver a payload to every Web Push subscription a user has registered. */
+async function sendWebPushToUser(userId: string, payload: PushPayload): Promise<void> {
   if (!pushConfigured()) return;
 
   const subs = await prisma.pushSubscription.findMany({ where: { userId } });

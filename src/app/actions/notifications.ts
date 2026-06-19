@@ -55,6 +55,39 @@ export async function deletePushSubscription(input: {
   return { ok: true };
 }
 
+// ── Native (FCM) device tokens ──────────────────────────────────────────────
+
+const saveDeviceTokenSchema = z.object({
+  token: z.string().min(1),
+  platform: z.string().min(1).optional(),
+});
+
+/** Register (or re-associate) an FCM device token from the Capacitor app. */
+export async function saveDeviceToken(input: {
+  token: string;
+  platform?: string;
+}): Promise<NotificationActionResult> {
+  const parsed = saveDeviceTokenSchema.safeParse(input);
+  if (!parsed.success) {
+    return { ok: false, error: parsed.error.issues[0]?.message ?? 'Invalid token' };
+  }
+  const userId = await requireUserId();
+  const { token, platform } = parsed.data;
+
+  await prisma.deviceToken.upsert({
+    where: { token },
+    create: { userId, token, platform: platform ?? 'android' },
+    update: { userId },
+  });
+  return { ok: true };
+}
+
+export async function deleteDeviceToken(input: { token: string }): Promise<NotificationActionResult> {
+  const userId = await requireUserId();
+  await prisma.deviceToken.deleteMany({ where: { userId, token: input.token } });
+  return { ok: true };
+}
+
 // ── In-app notification center ──────────────────────────────────────────────
 
 export async function listNotifications(): Promise<Notification[]> {

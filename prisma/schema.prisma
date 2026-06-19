@@ -62,6 +62,7 @@ model User {
   questMemberships     QuestMember[]
   pet                  Pet?
   pushSubscriptions    PushSubscription[]
+  deviceTokens         DeviceToken[]
   notifications        Notification[]
   notificationPreference NotificationPreference?
   cosmetics            CosmeticUnlock[]
@@ -98,6 +99,19 @@ model PushSubscription {
   endpoint  String   @unique
   p256dh    String
   auth      String
+  createdAt DateTime @default(now())
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+// A native push (FCM) device token registered by the Capacitor Android app.
+// The web uses PushSubscription (Web Push); the app uses these.
+model DeviceToken {
+  id        String   @id @default(cuid())
+  userId    String
+  token     String   @unique
+  platform  String   @default("android")
   createdAt DateTime @default(now())
   user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 
