@@ -4,6 +4,19 @@ A gamified, RPG-flavored task tracker. Turn your projects into quests, break the
 
 Built with Next.js (App Router), Prisma, PostgreSQL, and NextAuth, and fully containerized with Docker.
 
+## Contents
+
+- [Features](#features)
+- [Tech stack](#tech-stack)
+- [Getting started](#getting-started)
+  - [Run with Docker (recommended)](#run-with-docker-recommended)
+  - [Run locally](#run-locally)
+- [Environment variables](#environment-variables)
+- [Scripts](#scripts)
+- [Data model](#data-model)
+- [Changelog](#changelog)
+- [License](#license)
+
 ## Features
 
 - **Quests**: projects with a title, description, and custom icon, created with their objectives (and optional inventory) up front
