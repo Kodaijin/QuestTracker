@@ -2,7 +2,9 @@ import Link from 'next/link';
 
 /**
  * A fixed settings gear pinned to the top-right corner. Rendered once in the
- * root layout for signed-in users, so it appears on every page.
+ * root layout for signed-in users, so it appears on every page. The position is
+ * offset by the safe-area insets so it clears the Android status bar / notch in
+ * the native app (the insets are 0 in a normal browser).
  */
 export default function SettingsButton() {
   return (
@@ -10,7 +12,11 @@ export default function SettingsButton() {
       href="/settings"
       aria-label="Settings"
       title="Settings"
-      className="fixed top-4 right-4 z-50 inline-flex items-center justify-center rounded-lg border border-zinc-700 bg-zinc-900/70 p-2 text-zinc-300 shadow-lg shadow-black/20 backdrop-blur transition-all hover:bg-zinc-800/80 hover:text-zinc-100"
+      style={{
+        top: 'calc(env(safe-area-inset-top, 0px) + 0.75rem)',
+        right: 'calc(env(safe-area-inset-right, 0px) + 0.75rem)',
+      }}
+      className="fixed z-50 inline-flex items-center justify-center rounded-lg border border-zinc-700 bg-zinc-900/70 p-2 text-zinc-300 shadow-lg shadow-black/20 backdrop-blur transition-all hover:bg-zinc-800/80 hover:text-zinc-100"
     >
       <svg
         xmlns="http://www.w3.org/2000/svg"

@@ -1,4 +1,5 @@
 import type { ReactNode } from 'react';
+import type { Viewport } from 'next';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
 import { prisma } from '@/lib/prisma';
@@ -9,6 +10,10 @@ import SettingsButton from '@/components/SettingsButton';
 import './globals.css';
 
 export const metadata = { title: 'QuestTracker' };
+
+// viewport-fit=cover so env(safe-area-inset-*) is populated in the native app,
+// letting fixed UI (the settings gear) clear the status bar / notch.
+export const viewport: Viewport = { viewportFit: 'cover' };
 
 /**
  * The signed-in user's equipped theme (applied as data-theme to avoid FOUC) and
