@@ -3,6 +3,7 @@
 import { useState, useTransition } from 'react';
 import dynamic from 'next/dynamic';
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import { useWebGLEnabled } from '@/lib/useWebGL';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -56,10 +57,11 @@ function Preview({ c }: { c: Cosmetic }) {
 }
 
 export default function ShopClient({ initialState }: Props) {
+  const router = useRouter();
   const { refresh } = useCosmetics();
   const webgl = useWebGLEnabled();
   const [state, setState] = useState<CosmeticsState>(initialState);
-  const [tab, setTab] = useState<CosmeticCategory>('theme');
+  const [tab, setTab] = useState<CosmeticCategory>(COSMETIC_CATEGORIES[0].id);
   const [error, setError] = useState<string | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
   const [, startTransition] = useTransition();
@@ -87,7 +89,11 @@ export default function ShopClient({ initialState }: Props) {
     setError(null);
     setBusyId(c.id);
     startTransition(async () => {
-      applyResult(await equipCosmetic({ category: c.category, cosmeticId: equip ? c.id : null }));
+      const result = await equipCosmetic({ category: c.category, cosmeticId: equip ? c.id : null });
+      applyResult(result);
+      // The backdrop is rendered from the server layout, so refresh it on a
+      // background change to swap the live background without a reload.
+      if (result.ok && c.category === 'background') router.refresh();
       setBusyId(null);
     });
   }
@@ -119,6 +125,12 @@ export default function ShopClient({ initialState }: Props) {
         achievements, and hitting streak milestones.
       </p>
 
+      {state.free && (
+        <p className="mt-4 text-sm text-emerald-300 bg-emerald-950/40 border border-emerald-900/60 rounded-lg px-3 py-2">
+          Free cosmetics mode is on — everything&apos;s unlocked, no gems needed. Turn it off in Settings to use the gem economy.
+        </p>
+      )}
+
       {/* Category tabs */}
       <div className="mt-6 flex flex-wrap gap-2">
         {COSMETIC_CATEGORIES.map((cat) => (
@@ -148,8 +160,8 @@ export default function ShopClient({ initialState }: Props) {
       {/* Items */}
       <div className="mt-5 grid grid-cols-1 sm:grid-cols-2 gap-4">
         {items.map((c) => {
-          // Free cosmetics need no purchase — treat them as already owned.
-          const owned = state.ownedIds.includes(c.id) || !!c.free;
+          // Free cosmetics — and everything, when free mode is on — need no purchase.
+          const owned = state.ownedIds.includes(c.id) || !!c.free || state.free;
           const equipped = state.equipped[c.category] === c.id;
           const affordable = state.balance >= c.price;
           const busy = busyId === c.id;

@@ -52,6 +52,8 @@ model User {
   frameId              String?
   particleId           String?
   backgroundId         String?
+  // When true, all cosmetics are unlocked & equippable without spending gems.
+  cosmeticsFree        Boolean                @default(false)
   projects             Project[]
   achievements         UnlockedAchievement[]
   completionEvents     CompletionEvent[]

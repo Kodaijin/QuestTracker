@@ -41,7 +41,6 @@ export function earnedGems(args: {
 export type CosmeticCategory = 'theme' | 'xpbar' | 'frame' | 'particle' | 'background';
 
 export const COSMETIC_CATEGORIES: { id: CosmeticCategory; label: string; blurb: string }[] = [
-  { id: 'theme', label: 'Color Themes', blurb: 'Recolor the app accent everywhere.' },
   { id: 'xpbar', label: 'XP Bar Styles', blurb: 'Animate your XP bar.' },
   { id: 'frame', label: 'Frames & Glows', blurb: 'Decorate your hero panel.' },
   { id: 'particle', label: 'Celebration FX', blurb: 'Restyle level-up sparkles.' },
@@ -49,7 +48,31 @@ export const COSMETIC_CATEGORIES: { id: CosmeticCategory; label: string; blurb: 
 ];
 
 /** Which renderer a background cosmetic uses. 'css' = the original CSS aurora. */
-export type BackgroundKind = 'css' | 'aurora-webgl' | 'nebula' | 'starfield';
+export type BackgroundKind =
+  | 'css'
+  | 'aurora-webgl'
+  | 'nebula'
+  | 'starfield'
+  | 'fireflies'
+  | 'ocean'
+  | 'ember'
+  | 'galaxy'
+  | 'sakura'
+  | 'synthwave'
+  | 'constellations'
+  | 'rain';
+
+/** Which WebGL particle behavior a celebration cosmetic plays. */
+export type CelebrationKind =
+  | 'stars' // default
+  | 'confetti'
+  | 'fireworks'
+  | 'coins'
+  | 'embers'
+  | 'petals'
+  | 'runes'
+  | 'frost'
+  | 'vortex';
 
 export interface Cosmetic {
   id: string;
@@ -65,21 +88,15 @@ export interface Cosmetic {
   themeAttr?: string;
   /** CSS class applied to the target element (xpbar / frame categories). */
   className?: string;
-  /** Particle set (particle category). */
+  /** Particle set for the CSS/DOM fallback celebration (particle category). */
   particle?: { chars: string[]; colorClass: string };
+  /** WebGL celebration behavior + palette (particle category). */
+  fx?: { kind: CelebrationKind; colors: string[] };
   /** Renderer to use (background category). */
   background?: { kind: BackgroundKind };
 }
 
 export const COSMETICS: Cosmetic[] = [
-  // ── Color themes (accent recolor via [data-theme]) ──
-  { id: 'theme-frostbite', category: 'theme', name: 'Frostbite', description: 'Icy sky-blue and cyan.', price: 250, swatch: ['#38bdf8', '#22d3ee'], themeAttr: 'frostbite' },
-  { id: 'theme-verdant', category: 'theme', name: 'Verdant', description: 'Lush emerald green.', price: 250, swatch: ['#34d399', '#10b981'], themeAttr: 'verdant' },
-  { id: 'theme-royal', category: 'theme', name: 'Royal', description: 'Regal violet.', price: 250, swatch: ['#a78bfa', '#8b5cf6'], themeAttr: 'royal' },
-  { id: 'theme-sakura', category: 'theme', name: 'Sakura', description: 'Soft cherry-blossom pink.', price: 250, swatch: ['#f472b6', '#fb7185'], themeAttr: 'sakura' },
-  { id: 'theme-abyss', category: 'theme', name: 'Abyss', description: 'Deep-sea teal.', price: 250, swatch: ['#2dd4bf', '#14b8a6'], themeAttr: 'abyss' },
-  { id: 'theme-crimson', category: 'theme', name: 'Crimson', description: 'Fierce rose-red.', price: 250, swatch: ['#fb7185', '#ef4444'], themeAttr: 'crimson' },
-
   // ── XP-bar styles (class on the bar fill) ──
   { id: 'xpbar-quicksilver', category: 'xpbar', name: 'Quicksilver', description: 'A faster silver shimmer.', price: 50, swatch: ['#e5e7eb', '#9ca3af'], className: 'xpbar-quicksilver' },
   { id: 'xpbar-pulse', category: 'xpbar', name: 'Pulse Glow', description: 'A breathing glow along the bar.', price: 100, swatch: ['#fbbf24', '#f59e0b'], className: 'xpbar-pulse' },
@@ -92,10 +109,16 @@ export const COSMETICS: Cosmetic[] = [
   { id: 'frame-vines', category: 'frame', name: 'Verdant Vines', description: 'Emerald frame + glow.', price: 150, swatch: ['#34d399', '#10b981'], className: 'frame-vines' },
   { id: 'frame-void', category: 'frame', name: 'Void', description: 'Violet frame + deep glow.', price: 400, swatch: ['#a78bfa', '#7c3aed'], className: 'frame-void' },
 
-  // ── Celebration particles (level-up / quest-complete sparkles) ──
-  { id: 'particle-petals', category: 'particle', name: 'Petals', description: 'Drifting cherry petals.', price: 100, swatch: ['#f9a8d4', '#fb7185'], particle: { chars: ['🌸', '🌺', '🌷'], colorClass: 'text-pink-300' } },
-  { id: 'particle-embers', category: 'particle', name: 'Embers', description: 'Rising fiery embers.', price: 100, swatch: ['#fb923c', '#ef4444'], particle: { chars: ['🔥', '✦', '✶'], colorClass: 'text-orange-300' } },
-  { id: 'particle-confetti', category: 'particle', name: 'Confetti', description: 'A festive confetti burst.', price: 200, swatch: ['#e879f9', '#22d3ee'], particle: { chars: ['🎉', '🎊', '✨'], colorClass: 'text-fuchsia-300' } },
+  // ── Celebration FX (WebGL particle bursts on level-up / quest-complete) ──
+  // `particle` drives the CSS/DOM fallback; `fx` drives the WebGL behavior.
+  { id: 'particle-confetti', category: 'particle', name: 'Confetti Burst', description: 'Tumbling colored paper raining down.', price: 150, swatch: ['#f472b6', '#22d3ee'], particle: { chars: ['🎉', '🎊', '✨'], colorClass: 'text-fuchsia-300' }, fx: { kind: 'confetti', colors: ['#f87171', '#fbbf24', '#34d399', '#38bdf8', '#a78bfa', '#f472b6'] } },
+  { id: 'particle-fireworks', category: 'particle', name: 'Fireworks', description: 'Bursts that explode and rain down.', price: 250, swatch: ['#fbbf24', '#f472b6'], particle: { chars: ['🎆', '✦', '✨'], colorClass: 'text-amber-300' }, fx: { kind: 'fireworks', colors: ['#fbbf24', '#f472b6', '#22d3ee', '#a78bfa', '#ffffff'] } },
+  { id: 'particle-coins', category: 'particle', name: 'Golden Coins', description: 'A burst of loot — coins erupt and fall.', price: 250, swatch: ['#fcd34d', '#f59e0b'], particle: { chars: ['🪙', '💰', '✨'], colorClass: 'text-amber-300' }, fx: { kind: 'coins', colors: ['#fcd34d', '#f59e0b', '#fde68a'] } },
+  { id: 'particle-embers', category: 'particle', name: 'Ember Flurry', description: 'Glowing embers swirling upward.', price: 150, swatch: ['#fb923c', '#ef4444'], particle: { chars: ['🔥', '✦', '✶'], colorClass: 'text-orange-300' }, fx: { kind: 'embers', colors: ['#fb923c', '#ef4444', '#fbbf24'] } },
+  { id: 'particle-petals', category: 'particle', name: 'Petal Drift', description: 'Cherry-blossom petals cascading down.', price: 150, swatch: ['#f9a8d4', '#fb7185'], particle: { chars: ['🌸', '🌺', '🌷'], colorClass: 'text-pink-300' }, fx: { kind: 'petals', colors: ['#f9a8d4', '#fb7185', '#fecdd3'] } },
+  { id: 'particle-runes', category: 'particle', name: 'Arcane Runes', description: 'Glowing sigils rising and fading.', price: 250, swatch: ['#a78bfa', '#22d3ee'], particle: { chars: ['✶', '❖', '✦'], colorClass: 'text-violet-300' }, fx: { kind: 'runes', colors: ['#a78bfa', '#22d3ee', '#c4b5fd'] } },
+  { id: 'particle-frost', category: 'particle', name: 'Frostfall', description: 'Icy crystals sparkling down.', price: 200, swatch: ['#bae6fd', '#7dd3fc'], particle: { chars: ['❄', '✦', '❅'], colorClass: 'text-sky-200' }, fx: { kind: 'frost', colors: ['#bae6fd', '#7dd3fc', '#ffffff'] } },
+  { id: 'particle-vortex', category: 'particle', name: 'Sparkle Vortex', description: 'Particles spiraling out in a swirl.', price: 250, swatch: ['#e879f9', '#22d3ee'], particle: { chars: ['✦', '✧', '⋆'], colorClass: 'text-fuchsia-300' }, fx: { kind: 'vortex', colors: ['#e879f9', '#22d3ee', '#fef08a'] } },
 
   // ── Backgrounds (ambient backdrop behind all content) ──
   // `bg-aurora` is the original CSS look and the default — free, no canvas.
@@ -103,6 +126,14 @@ export const COSMETICS: Cosmetic[] = [
   { id: 'bg-aurora-live', category: 'background', name: 'Living Aurora', description: 'A flowing WebGL aurora with floating motes.', price: 0, free: true, swatch: ['#818cf8', '#22d3ee'], background: { kind: 'aurora-webgl' } },
   { id: 'bg-nebula', category: 'background', name: 'Nebula', description: 'Billowing colored nebula clouds.', price: 300, swatch: ['#a855f7', '#ec4899'], background: { kind: 'nebula' } },
   { id: 'bg-starfield', category: 'background', name: 'Deep Starfield', description: 'A parallax field of drifting stars.', price: 350, swatch: ['#38bdf8', '#1e293b'], background: { kind: 'starfield' } },
+  { id: 'bg-fireflies', category: 'background', name: 'Mystic Fireflies', description: 'Glowing fireflies drifting through a dark forest.', price: 300, swatch: ['#fde047', '#a3e635'], background: { kind: 'fireflies' } },
+  { id: 'bg-ocean', category: 'background', name: 'Ocean Abyss', description: 'Caustic light and rising bubbles in the deep.', price: 300, swatch: ['#22d3ee', '#0e7490'], background: { kind: 'ocean' } },
+  { id: 'bg-ember', category: 'background', name: 'Ember', description: 'Glowing cracks and rising volcanic embers.', price: 350, swatch: ['#fb923c', '#dc2626'], background: { kind: 'ember' } },
+  { id: 'bg-galaxy', category: 'background', name: 'Galaxy Spiral', description: 'A slowly rotating spiral galaxy.', price: 400, swatch: ['#c084fc', '#60a5fa'], background: { kind: 'galaxy' } },
+  { id: 'bg-sakura', category: 'background', name: 'Sakura Drift', description: 'Cherry-blossom petals drifting down.', price: 300, swatch: ['#f9a8d4', '#fb7185'], background: { kind: 'sakura' } },
+  { id: 'bg-synthwave', category: 'background', name: 'Synthwave', description: 'A neon grid receding under a banded sun.', price: 350, swatch: ['#e879f9', '#22d3ee'], background: { kind: 'synthwave' } },
+  { id: 'bg-constellations', category: 'background', name: 'Constellations', description: 'Drifting stars linked by faint lines.', price: 300, swatch: ['#93c5fd', '#1e293b'], background: { kind: 'constellations' } },
+  { id: 'bg-rain', category: 'background', name: 'Rainstorm', description: 'Streaking rain with distant lightning.', price: 350, swatch: ['#94a3b8', '#334155'], background: { kind: 'rain' } },
 ];
 
 // ── Helpers ─────────────────────────────────────────────────────────────────────
@@ -145,6 +176,18 @@ export const DEFAULT_PARTICLE = { chars: ['✦', '✧', '✶', '⋆'], colorClas
 export function particleFor(id: string | null): { chars: string[]; colorClass: string } {
   if (!id) return DEFAULT_PARTICLE;
   return getCosmetic(id)?.particle ?? DEFAULT_PARTICLE;
+}
+
+/** The default WebGL celebration (a golden star shower) when none is equipped. */
+export const DEFAULT_CELEBRATION: { kind: CelebrationKind; colors: string[] } = {
+  kind: 'stars',
+  colors: ['#fcd34d', '#ffffff'],
+};
+
+/** Resolve the WebGL celebration behavior for an equipped id, defaulting to stars. */
+export function celebrationFor(id: string | null): { kind: CelebrationKind; colors: string[] } {
+  if (!id) return DEFAULT_CELEBRATION;
+  return getCosmetic(id)?.fx ?? DEFAULT_CELEBRATION;
 }
 
 /** The default background when none is equipped: the original CSS aurora. */

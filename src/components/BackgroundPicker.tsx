@@ -17,7 +17,7 @@ import { cn } from '@/lib/utils';
  */
 export default function BackgroundPicker() {
   const router = useRouter();
-  const { equipped, ownedIds, refresh } = useCosmetics();
+  const { equipped, ownedIds, free, refresh } = useCosmetics();
   const [busyId, setBusyId] = useState<string | null>(null);
   const [, startTransition] = useTransition();
 
@@ -51,7 +51,7 @@ export default function BackgroundPicker() {
       <CardContent className="pt-6">
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           {backgrounds.map((c) => {
-            const unlocked = c.free || ownedIds.includes(c.id);
+            const unlocked = c.free || free || ownedIds.includes(c.id);
             const active = activeId === c.id;
             const busy = busyId === c.id;
             return (

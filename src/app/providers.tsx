@@ -9,6 +9,8 @@ interface CosmeticsContextValue {
   equipped: EquippedCosmetics;
   balance: number;
   ownedIds: string[];
+  /** When true, the gem economy is off — everything is unlocked. */
+  free: boolean;
   /** Re-fetch after a purchase/equip so the UI reflects the change app-wide. */
   refresh: () => Promise<void>;
 }
@@ -17,6 +19,7 @@ const CosmeticsContext = createContext<CosmeticsContextValue>({
   equipped: DEFAULT_EQUIPPED,
   balance: 0,
   ownedIds: [],
+  free: false,
   refresh: async () => {},
 });
 
@@ -55,6 +58,7 @@ function CosmeticsProvider({ children }: { children: ReactNode }) {
         equipped,
         balance: state?.balance ?? 0,
         ownedIds: state?.ownedIds ?? [],
+        free: state?.free ?? false,
         refresh,
       }}
     >

@@ -26,6 +26,8 @@ export interface CosmeticsState {
   spent: number;
   ownedIds: string[];
   equipped: EquippedCosmetics;
+  /** When true, the user has opted out of the gem economy — everything is free. */
+  free: boolean;
 }
 
 export type CosmeticsResult =
@@ -51,7 +53,14 @@ async function buildState(userId: string): Promise<CosmeticsState> {
     prisma.cosmeticUnlock.findMany({ where: { userId }, select: { cosmeticId: true } }),
     prisma.user.findUnique({
       where: { id: userId },
-      select: { themeId: true, xpBarId: true, frameId: true, particleId: true, backgroundId: true },
+      select: {
+        themeId: true,
+        xpBarId: true,
+        frameId: true,
+        particleId: true,
+        backgroundId: true,
+        cosmeticsFree: true,
+      },
     }),
   ]);
 
@@ -75,6 +84,7 @@ async function buildState(userId: string): Promise<CosmeticsState> {
       particle: user?.particleId ?? null,
       background: user?.backgroundId ?? null,
     },
+    free: user?.cosmeticsFree ?? false,
   };
 }
 
@@ -133,19 +143,40 @@ export async function equipCosmetic(input: {
     if (!cosmetic || cosmetic.category !== category) {
       return { ok: false, error: 'Unknown cosmetic.' };
     }
-    // Free cosmetics (e.g. default backgrounds) can be equipped without a purchase.
+    // Free cosmetics (e.g. default backgrounds), and users who've turned off the
+    // gem economy, can equip without a purchase.
     if (!cosmetic.free) {
-      const owned = await prisma.cosmeticUnlock.findUnique({
-        where: { userId_cosmeticId: { userId, cosmeticId } },
-        select: { id: true },
+      const user = await prisma.user.findUnique({
+        where: { id: userId },
+        select: { cosmeticsFree: true },
       });
-      if (!owned) return { ok: false, error: "You don't own this yet." };
+      if (!user?.cosmeticsFree) {
+        const owned = await prisma.cosmeticUnlock.findUnique({
+          where: { userId_cosmeticId: { userId, cosmeticId } },
+          select: { id: true },
+        });
+        if (!owned) return { ok: false, error: "You don't own this yet." };
+      }
     }
   }
 
   await prisma.user.update({
     where: { id: userId },
     data: { [CATEGORY_COLUMN[category]]: cosmeticId },
+  });
+
+  return { ok: true, state: await buildState(userId) };
+}
+
+/** Toggle the gem economy off (everything free) or back on. */
+export async function setCosmeticsFree(enabled: boolean): Promise<CosmeticsResult> {
+  const parsed = z.boolean().safeParse(enabled);
+  if (!parsed.success) return { ok: false, error: 'Invalid input' };
+
+  const userId = await requireUserId();
+  await prisma.user.update({
+    where: { id: userId },
+    data: { cosmeticsFree: parsed.data },
   });
 
   return { ok: true, state: await buildState(userId) };

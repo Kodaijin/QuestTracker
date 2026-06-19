@@ -8,6 +8,7 @@ import PartyNavLink from '@/components/PartyNavLink';
 import NotificationBell from '@/components/NotificationBell';
 import ShopNavLink from '@/components/ShopNavLink';
 import BackgroundPicker from '@/components/BackgroundPicker';
+import CosmeticsModeToggle from '@/components/CosmeticsModeToggle';
 import {
   changeEmail,
   changeUsername,
@@ -353,6 +354,9 @@ export default function SettingsClient({
             </button>
           </CardContent>
         </Card>
+
+        {/* ── Cosmetics mode ────────────────────────────────────────────────── */}
+        <CosmeticsModeToggle />
 
         {/* ── Background ────────────────────────────────────────────────────── */}
         <BackgroundPicker />

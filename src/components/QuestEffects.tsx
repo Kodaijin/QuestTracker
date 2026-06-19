@@ -4,31 +4,15 @@ import { useState } from 'react';
 import type { CSSProperties } from 'react';
 import dynamic from 'next/dynamic';
 import { webGLAvailable } from '@/lib/useWebGL';
+import { useCosmetics } from '@/app/providers';
+import { particleFor, celebrationFor } from '@/lib/cosmetics';
 
 const BURST_CHARS = ['✦', '✧', '✶', '⋆'];
 const RISE_CHARS = ['✦', '✧', '✨', '⭐', '🌟', '⋆'];
 
-// WebGL particle shower — loaded only when WebGL is available, so three.js stays
+// WebGL particle burst — loaded only when WebGL is available, so three.js stays
 // out of the initial bundle.
 const WebGLShower = dynamic(() => import('@/components/effects/WebGLShower'), { ssr: false });
-
-/** An equipped celebration-particle cosmetic (chars + Tailwind text color). */
-export type ParticleStyle = { chars: string[]; colorClass: string };
-const DEFAULT_RISE: ParticleStyle = { chars: RISE_CHARS, colorClass: 'text-amber-300' };
-
-/** Maps the Tailwind text-color classes used by particle cosmetics to a hex palette. */
-const CLASS_TO_HEX: Record<string, string> = {
-  'text-amber-300': '#fcd34d',
-  'text-pink-300': '#f9a8d4',
-  'text-orange-300': '#fdba74',
-  'text-fuchsia-300': '#f0abfc',
-  'text-emerald-300': '#6ee7b7',
-};
-
-/** Two-color palette (cosmetic color + bright white sparkle) for the WebGL shower. */
-function showerColors(colorClass: string): string[] {
-  return [CLASS_TO_HEX[colorClass] ?? '#fcd34d', '#ffffff'];
-}
 
 type BurstParticle = { dx: number; dy: number; delay: number; char: string };
 type RiseParticle = { left: number; delay: number; size: number; char: string };
@@ -78,13 +62,11 @@ export function SparkleBurst({ count = 8 }: { count?: number }) {
  * plus a floating toast. Render inside a `position: relative` container (the
  * toast is fixed, so it escapes to the viewport regardless).
  */
-export function QuestCompleteEffect({
-  count = 18,
-  particle = DEFAULT_RISE,
-}: {
-  count?: number;
-  particle?: ParticleStyle;
-}) {
+export function QuestCompleteEffect({ count = 18 }: { count?: number }) {
+  const { equipped } = useCosmetics();
+  const particle = particleFor(equipped.particle);
+  const fx = celebrationFor(equipped.particle);
+
   const [particles] = useState<RiseParticle[]>(() =>
     Array.from({ length: count }, () => ({
       left: Math.random() * 100,
@@ -100,7 +82,7 @@ export function QuestCompleteEffect({
     <>
       {/* Rising sparkles over the header — WebGL shower when available, else CSS glyphs. */}
       {webgl ? (
-        <WebGLShower colors={showerColors(particle.colorClass)} count={140} />
+        <WebGLShower kind={fx.kind} colors={fx.colors} scale={0.85} />
       ) : (
         <span
           className="pointer-events-none absolute inset-x-0 bottom-0 top-0 overflow-visible"
@@ -140,15 +122,11 @@ export function QuestCompleteEffect({
  * prominent toast announcing the new level and rank title. Mount it keyed by a
  * nonce so it remounts (and re-animates) on each level gain; it auto-fades.
  */
-export function LevelUpEffect({
-  level,
-  title,
-  particle = DEFAULT_RISE,
-}: {
-  level: number;
-  title: string;
-  particle?: ParticleStyle;
-}) {
+export function LevelUpEffect({ level, title }: { level: number; title: string }) {
+  const { equipped } = useCosmetics();
+  const particle = particleFor(equipped.particle);
+  const fx = celebrationFor(equipped.particle);
+
   const [particles] = useState<RiseParticle[]>(() =>
     Array.from({ length: 28 }, () => ({
       left: Math.random() * 100,
@@ -164,7 +142,7 @@ export function LevelUpEffect({
     <>
       {/* Full-viewport sparkle shower — WebGL when available, else CSS glyphs. */}
       {webgl ? (
-        <WebGLShower colors={showerColors(particle.colorClass)} count={300} />
+        <WebGLShower kind={fx.kind} colors={fx.colors} scale={1.3} />
       ) : (
         <span className="pointer-events-none fixed inset-0 z-40 overflow-hidden" aria-hidden>
           {particles.map((p, i) => (
@@ -215,7 +193,7 @@ export function PetEvolveEffect({ emoji, stageLabel }: { emoji: string; stageLab
   return (
     <>
       {webgl ? (
-        <WebGLShower colors={showerColors('text-emerald-300')} count={240} />
+        <WebGLShower kind="stars" colors={['#6ee7b7', '#ffffff']} scale={1.1} />
       ) : (
         <span className="pointer-events-none fixed inset-0 z-40 overflow-hidden" aria-hidden>
           {particles.map((p, i) => (

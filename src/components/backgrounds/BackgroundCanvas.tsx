@@ -3,12 +3,32 @@
 import { Canvas } from '@react-three/fiber';
 import type { BackgroundKind } from '@/lib/cosmetics';
 import { ShaderPlane } from './ShaderPlane';
-import { AURORA_FRAG, NEBULA_FRAG, STARFIELD_FRAG } from './shaders';
+import {
+  AURORA_FRAG,
+  NEBULA_FRAG,
+  STARFIELD_FRAG,
+  FIREFLIES_FRAG,
+  OCEAN_FRAG,
+  EMBER_FRAG,
+  GALAXY_FRAG,
+  SAKURA_FRAG,
+  SYNTHWAVE_FRAG,
+  CONSTELLATION_FRAG,
+  RAIN_FRAG,
+} from './shaders';
 
 const FRAGMENT: Partial<Record<BackgroundKind, string>> = {
   'aurora-webgl': AURORA_FRAG,
   nebula: NEBULA_FRAG,
   starfield: STARFIELD_FRAG,
+  fireflies: FIREFLIES_FRAG,
+  ocean: OCEAN_FRAG,
+  ember: EMBER_FRAG,
+  galaxy: GALAXY_FRAG,
+  sakura: SAKURA_FRAG,
+  synthwave: SYNTHWAVE_FRAG,
+  constellations: CONSTELLATION_FRAG,
+  rain: RAIN_FRAG,
 };
 
 /**
@@ -40,7 +60,9 @@ export default function BackgroundCanvas({
       gl={{ antialias: false, alpha: false, powerPreference: 'low-power' }}
       dpr={[1, 2]}
     >
-      <ShaderPlane fragment={fragment} colorA={colorA} colorB={colorB} />
+      {/* Key by kind so the material is fully recreated on a background switch —
+          three.js won't recompile a shader program from a prop change alone. */}
+      <ShaderPlane key={kind} fragment={fragment} colorA={colorA} colorB={colorB} />
     </Canvas>
   );
 }

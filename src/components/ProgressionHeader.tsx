@@ -6,7 +6,7 @@ import { getProgression, type Progression } from '@/app/actions/progression';
 import { getPetStatus, type PetStatus } from '@/app/actions/pet';
 import { dayKey } from '@/lib/progression';
 import { MOOD_META } from '@/lib/pet';
-import { getCosmetic, particleFor } from '@/lib/cosmetics';
+import { getCosmetic } from '@/lib/cosmetics';
 import { useCosmetics } from '@/app/providers';
 import { LevelUpEffect, PetEvolveEffect } from '@/components/QuestEffects';
 import CountUp from '@/components/CountUp';
@@ -27,7 +27,6 @@ export default function ProgressionHeader({ initial, refreshSignal = 0 }: Props)
   const { equipped } = useCosmetics();
   const xpBarClass = equipped.xpbar ? getCosmetic(equipped.xpbar)?.className ?? '' : '';
   const frameClass = equipped.frame ? getCosmetic(equipped.frame)?.className ?? '' : '';
-  const particle = particleFor(equipped.particle);
 
   const [prog, setProg] = useState<Progression | null>(initial ?? null);
   const [levelUpNonce, setLevelUpNonce] = useState(0);
@@ -155,7 +154,7 @@ export default function ProgressionHeader({ initial, refreshSignal = 0 }: Props)
       </Link>
 
       {levelUpNonce > 0 && (
-        <LevelUpEffect key={levelUpNonce} level={prog.level} title={prog.title} particle={particle} />
+        <LevelUpEffect key={levelUpNonce} level={prog.level} title={prog.title} />
       )}
 
       {petEvolveNonce > 0 && pet && (
