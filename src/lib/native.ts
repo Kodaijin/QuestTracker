@@ -34,3 +34,16 @@ export async function setupBackButton(): Promise<() => void> {
     void handle.remove();
   };
 }
+
+/**
+ * Run `cb` whenever the native app returns to the foreground. The Android WebView
+ * stays alive in the background, so without this it shows a stale snapshot until a
+ * full restart; refreshing on resume keeps quest data current. Returns a cleanup fn.
+ */
+export async function setupAppResume(cb: () => void): Promise<() => void> {
+  const { App } = await import('@capacitor/app');
+  const handle = await App.addListener('resume', cb);
+  return () => {
+    void handle.remove();
+  };
+}

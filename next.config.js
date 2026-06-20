@@ -30,6 +30,11 @@ const nextConfig = {
     // Enables src/instrumentation.ts register() — used to start the in-process
     // reminder scheduler on server boot (required flag on Next 14.2).
     instrumentationHook: true,
+    // Don't reuse the client-side Router Cache for dynamically-rendered pages.
+    // The quest views hydrate a client store from the server's data on mount, so
+    // a cached (stale) RSC payload on back-navigation would overwrite freshly
+    // created/completed quests until a hard refresh. 0 = always refetch on nav.
+    staleTimes: { dynamic: 0 },
     // web-push and firebase-admin are Node-only; keep them external so webpack
     // doesn't try to bundle them (and their deps) into server chunks.
     serverComponentsExternalPackages: ['web-push', 'firebase-admin'],

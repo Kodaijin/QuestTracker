@@ -5,6 +5,7 @@ import { createContext, useCallback, useContext, useEffect, useState, type React
 import { getCosmeticsState, type CosmeticsState } from '@/app/actions/cosmetics';
 import { getCosmetic, DEFAULT_EQUIPPED, type EquippedCosmetics } from '@/lib/cosmetics';
 import NativeBridge from '@/components/NativeBridge';
+import RefreshOnFocus from '@/components/RefreshOnFocus';
 
 interface CosmeticsContextValue {
   equipped: EquippedCosmetics;
@@ -73,6 +74,7 @@ export function Providers({ children }: { children: ReactNode }) {
     <SessionProvider>
       <CosmeticsProvider>
         <NativeBridge />
+        <RefreshOnFocus />
         {children}
       </CosmeticsProvider>
     </SessionProvider>
