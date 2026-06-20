@@ -17,6 +17,7 @@ const registerSchema = z.object({
     .trim()
     .regex(USERNAME_REGEX, 'Username must be 3–20 letters, numbers, or underscores'),
   name: z.string().optional(),
+  discordUsername: z.string().trim().max(64).optional(),
   securityQuestion: z
     .string()
     .trim()
@@ -39,10 +40,12 @@ export async function registerUser(input: RegisterInput): Promise<RegisterResult
     return { ok: false, error: parsed.error.issues[0]?.message ?? 'Invalid input' };
   }
 
-  const { email, password, username, name, securityQuestion, securityAnswer } = parsed.data;
+  const { email, password, username, name, discordUsername, securityQuestion, securityAnswer } =
+    parsed.data;
   const normalizedEmail = email.toLowerCase();
   const normalizedUsername = username.toLowerCase();
   const trimmedName = name?.trim() || undefined;
+  const trimmedDiscord = discordUsername?.trim() || undefined;
 
   const existing = await prisma.user.findUnique({
     where: { email: normalizedEmail },
@@ -73,6 +76,7 @@ export async function registerUser(input: RegisterInput): Promise<RegisterResult
         username: normalizedUsername,
         passwordHash,
         name: trimmedName ?? null,
+        discordUsername: trimmedDiscord ?? null,
         securityQuestion: securityQuestion.trim(),
         securityAnswerHash,
       },

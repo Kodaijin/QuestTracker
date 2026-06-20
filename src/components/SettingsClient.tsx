@@ -15,6 +15,7 @@ import {
   changeUsername,
   changePassword,
   changeSecurityQuestion,
+  changeDiscordUsername,
 } from '@/app/actions/account';
 import {
   saveNotificationPreferences,
@@ -33,6 +34,7 @@ const REMINDER_TYPES: { key: 'inactivity' | 'streak' | 'deadline' | 'pet'; label
 interface Props {
   currentEmail: string;
   currentUsername: string | null;
+  currentDiscordUsername: string | null;
   notificationPrefs: NotificationPrefs;
 }
 
@@ -65,6 +67,7 @@ function SuccessBox({ message }: { message: string }) {
 export default function SettingsClient({
   currentEmail,
   currentUsername,
+  currentDiscordUsername,
   notificationPrefs,
 }: Props) {
   const router = useRouter();
@@ -103,6 +106,23 @@ export default function SettingsClient({
     startPrefsTransition(async () => {
       const result = await saveNotificationPreferences(prefs);
       if (result.ok) setPrefsSuccess('Notification preferences saved.');
+    });
+  }
+
+  // ── Discord handle state ───────────────────────────────────────────────────────
+  const [discordValue, setDiscordValue] = useState(currentDiscordUsername ?? '');
+  const [discordSuccess, setDiscordSuccess] = useState<string | null>(null);
+  const [discordPending, startDiscordTransition] = useTransition();
+
+  function handleSaveDiscord() {
+    setDiscordSuccess(null);
+    startDiscordTransition(async () => {
+      const result = await changeDiscordUsername({ discordUsername: discordValue.trim() });
+      if (result.ok) {
+        setDiscordSuccess(
+          discordValue.trim() ? 'Discord handle saved.' : 'Discord notifications turned off.',
+        );
+      }
     });
   }
 
@@ -363,6 +383,44 @@ export default function SettingsClient({
             >
               {prefsPending ? 'Saving…' : 'Save preferences'}
             </button>
+
+            <div className="h-px bg-zinc-800" />
+
+            {/* Discord — opt-in shared-channel notifications */}
+            <div className="space-y-2">
+              <label htmlFor="discordUsername" className="block text-sm font-medium text-zinc-200">
+                Discord
+              </label>
+              <p className="text-xs text-zinc-500">
+                Get daily reminders and party-quest pings in your server&apos;s Discord channel.
+                Paste your numeric User ID (Discord → Settings → Advanced → Developer Mode, then
+                right-click your name → Copy User ID) so mentions ping you; a username works too but
+                shows as plain text. Leave blank to turn off.
+              </p>
+              <div className="flex items-center gap-3">
+                <input
+                  id="discordUsername"
+                  type="text"
+                  value={discordValue}
+                  onChange={(e) => {
+                    setDiscordValue(e.target.value);
+                    setDiscordSuccess(null);
+                  }}
+                  maxLength={64}
+                  placeholder="123456789012345678"
+                  className="field flex-1"
+                />
+                <button
+                  type="button"
+                  onClick={handleSaveDiscord}
+                  disabled={discordPending}
+                  className="flex-shrink-0 rounded-lg border border-indigo-500/50 bg-indigo-950/40 hover:bg-indigo-900/40 text-indigo-200 text-sm font-medium px-4 py-2 transition-all disabled:opacity-60"
+                >
+                  {discordPending ? 'Saving…' : 'Save'}
+                </button>
+              </div>
+              {discordSuccess && <SuccessBox message={discordSuccess} />}
+            </div>
           </CardContent>
         </Card>
 

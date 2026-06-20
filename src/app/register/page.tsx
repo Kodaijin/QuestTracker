@@ -22,10 +22,12 @@ export default function RegisterPage() {
     const username = (data.get('username') as string).trim();
     const nameRaw = (data.get('name') as string).trim();
     const name = nameRaw || undefined;
+    const discordRaw = (data.get('discordUsername') as string).trim();
+    const discordUsername = discordRaw || undefined;
     const securityQuestion = data.get('securityQuestion') as string;
     const securityAnswer = data.get('securityAnswer') as string;
 
-    const result = await registerUser({ email, password, username, name, securityQuestion, securityAnswer });
+    const result = await registerUser({ email, password, username, name, discordUsername, securityQuestion, securityAnswer });
 
     if (!result.ok) {
       setError(result.error);
@@ -61,6 +63,21 @@ export default function RegisterPage() {
               autoComplete="name"
               className="field"
             />
+          </div>
+
+          <div>
+            <label htmlFor="discordUsername" className="block text-sm font-medium text-zinc-300 mb-1.5">
+              Discord <span className="text-zinc-500 font-normal">(optional)</span>
+            </label>
+            <input
+              id="discordUsername"
+              name="discordUsername"
+              type="text"
+              maxLength={64}
+              placeholder="123456789012345678"
+              className="field"
+            />
+            <p className="mt-1 text-xs text-zinc-500">For Discord reminders &amp; party pings. Paste your numeric User ID (Discord → Settings → Advanced → Developer Mode, then right-click your name → Copy User ID) so mentions actually ping you; a username works too but shows as plain text.</p>
           </div>
 
           <div>

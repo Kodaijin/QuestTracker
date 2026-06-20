@@ -10,6 +10,7 @@ import { InviteStatus, Prisma } from '@prisma/client';
 import { authOptions } from '@/lib/auth';
 import { prisma } from '@/lib/prisma';
 import { USERNAME_REGEX } from '@/lib/username';
+import { appLink, discordConfigured, discordMention, sendDiscordMessage } from '@/lib/discord';
 
 // ── Session guard ───────────────────────────────────────────────────────────
 
@@ -246,7 +247,7 @@ export async function inviteToQuest(input: {
 
   const project = await prisma.project.findUnique({
     where: { id: projectId },
-    select: { userId: true, isEpic: true },
+    select: { userId: true, isEpic: true, title: true },
   });
   if (!project) return { ok: false, error: 'Quest not found.' };
   if (project.userId !== userId) return { ok: false, error: 'Only the quest owner can invite.' };
@@ -277,6 +278,27 @@ export async function inviteToQuest(input: {
       }),
     ),
   );
+
+  // Ping freshly invited members in the shared Discord channel. Best-effort; a
+  // webhook failure must not fail the invite.
+  if (discordConfigured()) {
+    try {
+      const members = await prisma.user.findMany({
+        where: { id: { in: valid } },
+        select: { discordUsername: true },
+      });
+      const mentions = members.map((m) => discordMention(m.discordUsername)).filter(Boolean);
+      if (mentions.length > 0) {
+        const link = appLink(`/projects/${projectId}`);
+        await sendDiscordMessage(
+          `📜 ${mentions.join(' ')} — you've been invited to the quest **${project.title}**!` +
+            `${link ? `\n${link}` : ''}`,
+        );
+      }
+    } catch {
+      /* ignore — Discord is a non-critical side channel */
+    }
+  }
 
   return { ok: true };
 }

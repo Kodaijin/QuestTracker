@@ -14,6 +14,7 @@ Built with Next.js (App Router), Prisma, PostgreSQL, and NextAuth, and fully con
 - [Environment variables](#environment-variables)
 - [Scripts](#scripts)
 - [Android app](#android-app)
+- [Discord integration](#discord-integration)
 - [Data model](#data-model)
 - [Changelog](#changelog)
 - [License](#license)
@@ -44,6 +45,7 @@ Built with Next.js (App Router), Prisma, PostgreSQL, and NextAuth, and fully con
 - **Authentication**: email/password accounts via NextAuth, each with a unique username for party invites and a security-question password reset flow
 - **Custom icons**: upload and auto-resize quest icons
 - **Android app**: an optional Capacitor wrapper that connects to any QuestTracker server you enter and reuses the whole web UI. Background notifications use native FCM push, while the website keeps using Web Push. See [Android app](#android-app)
+- **Discord notifications**: an optional shared-channel webhook that posts daily reminders, new group-quest invites, deadline alerts, and group-quest completions, @mentioning each user. Opt in per user by adding a Discord handle (numeric User ID for a real ping) in Settings. See [Discord integration](#discord-integration)
 
 ## Tech stack
 
@@ -111,6 +113,7 @@ npm run dev
 | `VAPID_SUBJECT`   | Contact for the push service, a `mailto:` or URL                   |
 | `REMINDER_SWEEP_MINUTES` | How often the reminder scheduler runs, in minutes (`0` disables it; default `15`) |
 | `FCM_SERVICE_ACCOUNT_JSON` | Firebase service-account JSON (single line) for native push in the Android app. Optional; leave empty to disable native push |
+| `DISCORD_WEBHOOK_URL` | Discord channel webhook URL for the [Discord integration](#discord-integration). Optional; leave empty to disable it entirely |
 
 See `.env.example` for a complete template. Note that web push requires HTTPS in production (localhost is exempt for development).
 
@@ -155,9 +158,44 @@ add its `google-services.json` to `android/app/`, and set
 won't get background notifications on the device. FCM is delivered as a second
 channel inside `sendPushToUser`, so reminders reach web and app subscribers alike.
 
+## Discord integration
+
+QuestTracker can post to a Discord channel through an incoming webhook. It's
+optional and fully off until you set `DISCORD_WEBHOOK_URL`. A webhook targets a
+single channel (it can't DM), so every message lands in that one channel and
+@mentions the relevant user(s).
+
+Set it up:
+
+1. In Discord, open **Server Settings → Integrations → Webhooks → New Webhook**,
+   pick the channel, and **Copy Webhook URL**.
+2. Set `DISCORD_WEBHOOK_URL` on the server to that URL (see `.env.example`). Also
+   make sure `NEXTAUTH_URL` is your real public URL — it's used to build the quest
+   links in each message.
+3. Each user opts in from **Settings → Discord** (or at signup) by entering a
+   Discord handle. Paste a **numeric User ID** (Discord → Settings → Advanced →
+   Developer Mode, then right-click a name → **Copy User ID**) for a real `<@id>`
+   ping; a plain username also works but shows as grey text without notifying.
+   Clearing the field opts the user back out.
+
+What gets posted (only for users who added a handle):
+
+- **Daily reminder** — a once-a-day summary of still-open quests at the user's
+  reminder hour (the existing Settings reminder time), deduped so it never reposts.
+- **New group quest** — when a quest is shared with allies on creation, or allies
+  are invited to an existing quest.
+- **Deadline alerts** — when a quest is due within 24 hours or just became active.
+- **Group-quest completion** — a celebration when a shared quest is fully finished
+  (solo completions are skipped to avoid noise).
+
+Delivery is best-effort: a missing or broken webhook never blocks quest creation
+or the reminder sweep. The sender lives in `src/lib/discord.ts`; sweep-driven
+events flow through the reminder sweep (`src/lib/reminders.ts`) and quest events
+through the project/party server actions.
+
 ## Data model
 
-- **User**: owns many projects, completion events, and unlocked achievements. Stores credentials, a unique `username` (used for party invites), and an optional security question
+- **User**: owns many projects, completion events, and unlocked achievements. Stores credentials, a unique `username` (used for party invites), an optional security question, and an optional `discordUsername` (a handle or numeric ID for the Discord integration)
 - **Project (Quest)**: title, description, icon, `difficulty`, `tags`, recurrence settings, and due/completion dates. An Epic is a Project with `isEpic`; its sub-quests are Projects pointing back via `parentId` (with `epicOrder` for sequencing and a `sequential` flag on the Epic)
 - **Objective**: ordered, completable sub-tasks belonging to a quest
 - **InventoryItem**: named items belonging to a quest, each with a `gathered` checkbox state
@@ -173,6 +211,12 @@ channel inside `sendPushToUser`, so reminders reach web and app subscribers alik
 - **CosmeticUnlock**: a cosmetic the user bought with gems (ownership only). The gem balance is derived as `earned − sum(owned prices)`, never stored as a counter. Equipped selections live on `User` (`themeId`/`xpBarId`/`frameId`/`particleId`/`backgroundId`), and the catalog and economy are code-defined in `src/lib/cosmetics.ts`. Free cosmetics (such as the default backgrounds) can be equipped without a purchase, and the per-user `cosmeticsFree` flag unlocks everything for users who opt out of the gem economy
 
 ## Changelog
+
+### 2026-06-19: Discord integration
+
+- An optional Discord channel webhook as a third notification surface alongside Web Push and FCM. Posts daily reminders, new group-quest invites, deadline alerts, and group-quest completions to a shared channel, @mentioning each opted-in user
+- New optional `DISCORD_WEBHOOK_URL` env var; the integration is fully disabled when it's unset. New `User.discordUsername` field (a username for display, or a numeric Discord User ID for a real ping), captured at signup and editable in Settings via a `changeDiscordUsername` action
+- New sender `src/lib/discord.ts`; the daily-reminder and deadline events flow through the reminder sweep, group-quest creation/invites through `createProject` / `inviteToQuest`, and completions through `toggleObjective`. All Discord delivery is best-effort and never blocks a quest action or sweep
 
 ### 2026-06-18: Android app (Capacitor)
 

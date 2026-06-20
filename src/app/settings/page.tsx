@@ -13,7 +13,7 @@ export default async function SettingsPage() {
 
   const user = await prisma.user.findUnique({
     where: { id: session.user.id },
-    select: { email: true, username: true },
+    select: { email: true, username: true, discordUsername: true },
   });
 
   // Fallback should never be reached since the session guarantees the user exists,
@@ -28,6 +28,7 @@ export default async function SettingsPage() {
     <SettingsClient
       currentEmail={user.email}
       currentUsername={user.username}
+      currentDiscordUsername={user.discordUsername}
       notificationPrefs={notificationPrefs}
     />
   );

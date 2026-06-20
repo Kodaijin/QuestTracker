@@ -13,6 +13,7 @@ import {
   type SchedulableQuest,
 } from '@/lib/recurrence';
 import { objectiveXp, itemXp, questXp } from '@/lib/progression';
+import { appLink, discordConfigured, discordMention, sendDiscordMessage } from '@/lib/discord';
 
 // ── XP / completion-event helpers ────────────────────────────────────────────
 //
@@ -120,6 +121,16 @@ async function acceptedParticipantIds(projectId: string): Promise<string[]> {
   });
   if (!project) return [];
   return [project.userId, ...project.members.map((m) => m.userId)];
+}
+
+/** Resolve the Discord mention strings for a set of user ids; users without a handle are skipped. */
+async function discordMentionsFor(userIds: string[]): Promise<string[]> {
+  if (userIds.length === 0) return [];
+  const users = await prisma.user.findMany({
+    where: { id: { in: userIds } },
+    select: { discordUsername: true },
+  });
+  return users.map((u) => discordMention(u.discordUsername)).filter(Boolean);
 }
 
 /** Ids of the user's accepted connections (allies), usable as quest invitees. */
@@ -470,7 +481,7 @@ export async function createProject(
     new Set(memberIds.filter((id) => id !== userId && allyIds.has(id))),
   );
 
-  return prisma.project.create({
+  const project = await prisma.project.create({
     data: {
       title,
       description: description ?? null,
@@ -505,6 +516,41 @@ export async function createProject(
       },
     },
   });
+
+  // Announce a new group quest to the shared Discord channel, mentioning the
+  // invited party. Best-effort: never let a webhook failure break quest creation.
+  if (validMemberIds.length > 0 && discordConfigured()) {
+    try {
+      await announceGroupQuest(userId, validMemberIds, project.id, project.title);
+    } catch {
+      /* ignore — Discord is a non-critical side channel */
+    }
+  }
+
+  return project;
+}
+
+/**
+ * Post a "new group quest" announcement to the shared Discord channel, mentioning
+ * the invited members. Caller guards on discordConfigured(); this is best-effort.
+ */
+async function announceGroupQuest(
+  ownerId: string,
+  inviteeIds: string[],
+  projectId: string,
+  title: string,
+): Promise<void> {
+  const owner = await prisma.user.findUnique({
+    where: { id: ownerId },
+    select: { name: true, username: true },
+  });
+  const ownerName = owner?.name || owner?.username || 'Someone';
+  const mentions = await discordMentionsFor(inviteeIds);
+  const party = mentions.length > 0 ? ` — party: ${mentions.join(' ')}` : '';
+  const link = appLink(`/projects/${projectId}`);
+  await sendDiscordMessage(
+    `📜 **${ownerName}** started a group quest: **${title}**${party}${link ? `\n${link}` : ''}`,
+  );
 }
 
 export async function createObjective(
@@ -691,6 +737,7 @@ export async function toggleObjective(
         select: {
           userId: true,
           id: true,
+          title: true,
           parentId: true,
           difficulty: true,
         },
@@ -751,6 +798,21 @@ export async function toggleObjective(
         where: { id: projectId },
         data: { lastCompletedAt: new Date() },
       });
+
+      // Celebrate a *shared* quest completion in the Discord channel. Solo
+      // completions are skipped to avoid spam. Best-effort, never throws.
+      if (participantIds.length > 1 && discordConfigured()) {
+        try {
+          const mentions = await discordMentionsFor(participantIds);
+          const who = mentions.length > 0 ? ` ${mentions.join(' ')}` : '';
+          const link = appLink(`/projects/${projectId}`);
+          await sendDiscordMessage(
+            `🏆 Group quest complete: **${objective.project.title}**!${who} 🎉${link ? `\n${link}` : ''}`,
+          );
+        } catch {
+          /* ignore — Discord is a non-critical side channel */
+        }
+      }
     }
   } else {
     for (const pid of participantIds) {

@@ -49,6 +49,12 @@ const changeSecurityQuestionSchema = z.object({
   securityAnswer: z.string().min(1, 'Security answer is required'),
 });
 
+// Low-stakes profile field (like a notification preference) — no password needed.
+// An empty value clears the handle (opts the user out of Discord notifications).
+const changeDiscordUsernameSchema = z.object({
+  discordUsername: z.string().trim().max(64),
+});
+
 // ── Actions ───────────────────────────────────────────────────────────────────
 
 export async function changeEmail(input: {
@@ -241,6 +247,25 @@ export async function changeSecurityQuestion(input: {
       securityQuestion: securityQuestion.trim(),
       securityAnswerHash,
     },
+  });
+
+  return { ok: true };
+}
+
+export async function changeDiscordUsername(input: {
+  discordUsername: string;
+}): Promise<AccountActionResult> {
+  const parsed = changeDiscordUsernameSchema.safeParse(input);
+  if (!parsed.success) {
+    return { ok: false, error: parsed.error.issues[0]?.message ?? 'Invalid input' };
+  }
+
+  const userId = await requireUserId();
+  const trimmed = parsed.data.discordUsername.trim();
+
+  await prisma.user.update({
+    where: { id: userId },
+    data: { discordUsername: trimmed || null },
   });
 
   return { ok: true };

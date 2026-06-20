@@ -46,6 +46,10 @@ model User {
   createdAt            DateTime               @default(now())
   securityQuestion     String?
   securityAnswerHash   String?
+  // Optional Discord handle for the shared-channel webhook integration. An
+  // all-digit value is treated as a numeric User ID (real @mention/ping); any
+  // other value renders as plain @name text. Blank = opted out. See src/lib/discord.ts.
+  discordUsername      String?
   // Equipped cosmetic ids (null = default look). See src/lib/cosmetics.ts.
   themeId              String?
   xpBarId              String?
