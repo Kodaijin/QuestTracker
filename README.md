@@ -45,7 +45,7 @@ Built with Next.js (App Router), Prisma, PostgreSQL, and NextAuth, and fully con
 - **Authentication**: email/password accounts via NextAuth, each with a unique username for party invites and a security-question password reset flow
 - **Custom icons**: upload and auto-resize quest icons
 - **Android app**: an optional Capacitor wrapper that connects to any QuestTracker server you enter and reuses the whole web UI. Background notifications use native FCM push, while the website keeps using Web Push. See [Android app](#android-app)
-- **Discord notifications**: an optional shared-channel webhook that posts daily reminders, new group-quest invites, deadline alerts, and group-quest completions, @mentioning each user. Opt in per user by adding a Discord handle (numeric User ID for a real ping) in Settings. See [Discord integration](#discord-integration)
+- **Discord notifications**: an optional shared-channel webhook that posts rich-embed messages for daily reminders, new group-quest invites, party progress updates, deadline alerts, and group-quest completions, @mentioning each user. Opt in per user by adding a Discord handle (numeric User ID for a real ping) in Settings. An optional bot adds `/addquest` and `/quests` slash commands. See [Discord integration](#discord-integration)
 
 ## Tech stack
 
@@ -114,6 +114,10 @@ npm run dev
 | `REMINDER_SWEEP_MINUTES` | How often the reminder scheduler runs, in minutes (`0` disables it; default `15`) |
 | `FCM_SERVICE_ACCOUNT_JSON` | Firebase service-account JSON (single line) for native push in the Android app. Optional; leave empty to disable native push |
 | `DISCORD_WEBHOOK_URL` | Discord channel webhook URL for the [Discord integration](#discord-integration). Optional; leave empty to disable it entirely |
+| `BOT_API_SECRET` | Shared secret authenticating the Discord bot to `/api/bot/quests`. Set on both the `app` and `bot` services. Optional; required only to run the bot |
+| `DISCORD_BOT_TOKEN` | Bot token for the optional Discord bot service. Optional; leave empty to skip the bot |
+| `DISCORD_APP_ID` | Discord application ID, used to register the bot's slash commands. Required for the bot |
+| `DISCORD_GUILD_ID` | Discord server ID for instant per-guild slash-command registration. Optional; without it commands register globally (slower to appear) |
 
 See `.env.example` for a complete template. Note that web push requires HTTPS in production (localhost is exempt for development).
 
@@ -178,20 +182,64 @@ Set it up:
    ping; a plain username also works but shows as grey text without notifying.
    Clearing the field opts the user back out.
 
+All posts are formatted as **rich embeds** (colored, titled cards with fields and
+a link back to the quest). Because Discord only resolves @mentions in a message's
+top-level content — never inside an embed — any post that should ping carries the
+mentions in the message content alongside the embed.
+
 What gets posted (only for users who added a handle):
 
 - **Daily reminder** — a once-a-day summary of still-open quests at the user's
   reminder hour (the existing Settings reminder time), deduped so it never reposts.
 - **New group quest** — when a quest is shared with allies on creation, or allies
   are invited to an existing quest.
+- **Party progress** — when any member of a shared quest checks an objective off or
+  gathers an item: who did it, plus a done/remaining breakdown, pinging the party.
 - **Deadline alerts** — when a quest is due within 24 hours or just became active.
 - **Group-quest completion** — a celebration when a shared quest is fully finished
   (solo completions are skipped to avoid noise).
 
 Delivery is best-effort: a missing or broken webhook never blocks quest creation
-or the reminder sweep. The sender lives in `src/lib/discord.ts`; sweep-driven
-events flow through the reminder sweep (`src/lib/reminders.ts`) and quest events
-through the project/party server actions.
+or the reminder sweep. The sender lives in `src/lib/discord.ts` (`sendDiscordEmbed`
+plus the `EmbedColors` palette); sweep-driven events flow through the reminder
+sweep (`src/lib/reminders.ts`) and quest events through the project/party server
+actions.
+
+### Discord bot (slash commands)
+
+An optional containerized bot (in `bot/`) lets users create and view quests from
+Discord with `/addquest` and `/quests`. It's separate from the webhook above and
+fully off unless you configure it.
+
+Set it up:
+
+1. Create an application at the [Discord Developer Portal](https://discord.com/developers/applications),
+   add a **Bot**, and copy its **token**. Copy the **Application ID** from General
+   Information, and (recommended) your **server ID** (enable Developer Mode, then
+   right-click the server → **Copy Server ID**).
+2. **Privileged Gateway Intents** (Bot tab): leave **all three OFF** — Presence,
+   Server Members, and Message Content. The bot only handles slash-command
+   interactions, so it needs none of them.
+3. Invite the bot via **OAuth2 → URL Generator**:
+   - **Scopes:** `bot` and `applications.commands`.
+   - **Bot Permissions:** none are required. Replies are sent ephemerally as
+     interaction responses (which ignore channel permissions), and the colored
+     channel embeds come from the webhook above, not the bot. `Send Messages` is a
+     harmless default if you'd rather not leave it empty.
+
+   Open the generated URL and authorize the bot into your server.
+4. Set `DISCORD_BOT_TOKEN`, `DISCORD_APP_ID`, `DISCORD_GUILD_ID`, and a shared
+   `BOT_API_SECRET` (the same value on the `app` and `bot` services). See
+   `.env.example`. `BOT_API_SECRET` is a secret you generate yourself — any long
+   random string, e.g. `node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"`.
+5. Run the bot service: `docker compose up --build bot` (it starts with the rest of
+   the stack too). On startup it registers its slash commands automatically.
+
+Each user must have their **numeric Discord ID** saved under **Settings → Discord**
+so the bot can map their Discord account to their QuestTracker account; otherwise
+the command replies with a hint to link it. The bot never touches the database
+directly — it calls the secured `/api/bot/quests` route, which reuses the same
+quest-creation logic (`createProjectForUser`) as the web UI.
 
 ## Data model
 
@@ -211,6 +259,13 @@ through the project/party server actions.
 - **CosmeticUnlock**: a cosmetic the user bought with gems (ownership only). The gem balance is derived as `earned − sum(owned prices)`, never stored as a counter. Equipped selections live on `User` (`themeId`/`xpBarId`/`frameId`/`particleId`/`backgroundId`), and the catalog and economy are code-defined in `src/lib/cosmetics.ts`. Free cosmetics (such as the default backgrounds) can be equipped without a purchase, and the per-user `cosmeticsFree` flag unlocks everything for users who opt out of the gem economy
 
 ## Changelog
+
+### 2026-06-20: Rich Discord embeds, a quest bot, and party progress notices
+
+- All Discord posts are now **rich embeds** (color-coded titles, fields, and quest links) instead of plain text. New `sendDiscordEmbed` sender and an `EmbedColors` palette in `src/lib/discord.ts`; every call site (reminder sweep, group-quest creation/invites, completions) was converted. Mentions stay in the message content since Discord won't ping from inside an embed
+- **Party progress notices**: when any member of a shared quest checks an objective off or gathers an item, the channel gets a "Quest Progress" embed showing who did it and a done/remaining breakdown, pinging the whole party. Wired into `toggleObjective` / `toggleInventoryItem` via a new `announceQuestProgress` helper, guarded to shared quests and skipped on the completing toggle (the completion embed covers that)
+- **Discord bot** (new `bot/` service): `/addquest` and `/quests` slash commands built on discord.js, shipped as its own Docker image and Compose service. It calls a new secured `POST /api/bot/quests` route (bearer-auth via `BOT_API_SECRET`) that maps the caller's numeric Discord ID to a user through `User.discordUsername` and reuses `createProjectForUser` — the same logic extracted from `createProject` so the UI and bot share one code path
+- New env vars: `BOT_API_SECRET`, `DISCORD_BOT_TOKEN`, `DISCORD_APP_ID`, `DISCORD_GUILD_ID` (all optional; the bot stays off until set). See `.env.example`
 
 ### 2026-06-19: Fresh quest data without a manual refresh
 

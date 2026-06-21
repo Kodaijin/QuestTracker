@@ -10,7 +10,13 @@ import { InviteStatus, Prisma } from '@prisma/client';
 import { authOptions } from '@/lib/auth';
 import { prisma } from '@/lib/prisma';
 import { USERNAME_REGEX } from '@/lib/username';
-import { appLink, discordConfigured, discordMention, sendDiscordMessage } from '@/lib/discord';
+import {
+  appLink,
+  discordConfigured,
+  discordMention,
+  sendDiscordEmbed,
+  EmbedColors,
+} from '@/lib/discord';
 
 // ── Session guard ───────────────────────────────────────────────────────────
 
@@ -290,9 +296,15 @@ export async function inviteToQuest(input: {
       const mentions = members.map((m) => discordMention(m.discordUsername)).filter(Boolean);
       if (mentions.length > 0) {
         const link = appLink(`/projects/${projectId}`);
-        await sendDiscordMessage(
-          `📜 ${mentions.join(' ')} — you've been invited to the quest **${project.title}**!` +
-            `${link ? `\n${link}` : ''}`,
+        await sendDiscordEmbed(
+          {
+            title: '📜 Quest Invitation',
+            description: `You've been invited to the quest **${project.title}**!`,
+            url: link || undefined,
+            color: EmbedColors.INVITE,
+            timestamp: new Date().toISOString(),
+          },
+          mentions.join(' '),
         );
       }
     } catch {

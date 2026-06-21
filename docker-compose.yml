@@ -40,8 +40,27 @@ services:
       REMINDER_SWEEP_MINUTES: ${REMINDER_SWEEP_MINUTES:-15}
       FCM_SERVICE_ACCOUNT_JSON: ${FCM_SERVICE_ACCOUNT_JSON:-}
       DISCORD_WEBHOOK_URL: ${DISCORD_WEBHOOK_URL:-}
+      # Shared secret the Discord bot uses to authenticate to /api/bot/quests.
+      BOT_API_SECRET: ${BOT_API_SECRET:-}
     ports:
       - "3000:3000"
+    restart: unless-stopped
+
+  # Optional Discord bot: adds /addquest and /quests slash commands. Only useful
+  # when DISCORD_BOT_TOKEN is set; otherwise the container just idles/exits.
+  bot:
+    build:
+      context: ./bot
+    container_name: questlog_bot
+    depends_on:
+      - app
+    environment:
+      DISCORD_BOT_TOKEN: ${DISCORD_BOT_TOKEN:-}
+      DISCORD_APP_ID: ${DISCORD_APP_ID:-}
+      DISCORD_GUILD_ID: ${DISCORD_GUILD_ID:-}
+      BOT_API_SECRET: ${BOT_API_SECRET:-}
+      # Internal URL of the app service on the compose network.
+      APP_URL: ${BOT_APP_URL:-http://app:3000}
     restart: unless-stopped
 
 volumes:

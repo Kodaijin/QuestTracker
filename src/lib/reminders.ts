@@ -14,7 +14,13 @@ import { prisma } from '@/lib/prisma';
 import { computeStreak, dayKey } from '@/lib/progression';
 import { petMood } from '@/lib/pet';
 import { sendPushToUser } from '@/lib/push';
-import { appLink, discordConfigured, discordMention, sendDiscordMessage } from '@/lib/discord';
+import {
+  appLink,
+  discordConfigured,
+  discordMention,
+  sendDiscordEmbed,
+  EmbedColors,
+} from '@/lib/discord';
 
 const INACTIVE_DAYS = 2;
 
@@ -53,6 +59,7 @@ async function emit(
   body: string,
   href: string,
   discord?: { username: string | null },
+  color: number = EmbedColors.REMINDER,
 ): Promise<void> {
   try {
     await prisma.notification.create({ data: { userId, type, dedupeKey, title, body, href } });
@@ -64,8 +71,15 @@ async function emit(
 
   if (discord?.username && discordConfigured()) {
     const link = appLink(href);
-    await sendDiscordMessage(
-      `${discordMention(discord.username)} **${title}** — ${body}${link ? `\n${link}` : ''}`,
+    await sendDiscordEmbed(
+      {
+        title,
+        description: body,
+        url: link || undefined,
+        color,
+        timestamp: new Date().toISOString(),
+      },
+      discordMention(discord.username) || undefined,
     );
   }
 }
@@ -164,12 +178,19 @@ export async function runReminderSweep(): Promise<void> {
             },
           });
 
-          const names = pending.slice(0, 5).map((q) => `"${q.title}"`).join(', ');
-          const more = pending.length > 5 ? `, +${pending.length - 5} more` : '';
+          const names = pending.slice(0, 10).map((q) => `• ${q.title}`).join('\n');
+          const more = pending.length > 10 ? `\n…and ${pending.length - 10} more` : '';
           const link = appLink('/today');
-          await sendDiscordMessage(
-            `🗒️ ${discordMention(discord.username)} — you have ${pending.length} quest(s) ` +
-              `waiting today: ${names}${more}.${link ? `\n${link}` : ''}`,
+          await sendDiscordEmbed(
+            {
+              title: '🗒️ Daily quest reminder',
+              description:
+                `You have **${pending.length}** quest(s) waiting today:\n${names}${more}`,
+              url: link || undefined,
+              color: EmbedColors.REMINDER,
+              timestamp: new Date().toISOString(),
+            },
+            discordMention(discord.username) || undefined,
           );
         } catch (e) {
           // Already sent today (P2002) → skip silently; anything else re-throws.
@@ -196,6 +217,7 @@ export async function runReminderSweep(): Promise<void> {
             `"${q.title}" is due within 24 hours.`,
             `/projects/${q.id}`,
             discord,
+            EmbedColors.DEADLINE,
           );
         }
       }
@@ -217,6 +239,7 @@ export async function runReminderSweep(): Promise<void> {
           `"${q.title}" is now available in your log.`,
           `/projects/${q.id}`,
           discord,
+          EmbedColors.ACTIVATION,
         );
       }
     }

@@ -13,7 +13,13 @@ import {
   type SchedulableQuest,
 } from '@/lib/recurrence';
 import { objectiveXp, itemXp, questXp } from '@/lib/progression';
-import { appLink, discordConfigured, discordMention, sendDiscordMessage } from '@/lib/discord';
+import {
+  appLink,
+  discordConfigured,
+  discordMention,
+  sendDiscordEmbed,
+  EmbedColors,
+} from '@/lib/discord';
 
 // ── XP / completion-event helpers ────────────────────────────────────────────
 //
@@ -415,7 +421,19 @@ export async function createProject(
   input: z.input<typeof createProjectSchema>,
 ): Promise<Project> {
   const userId = await requireUserId();
+  return createProjectForUser(userId, input);
+}
 
+/**
+ * Core quest-creation logic, parameterised by the owner's user id. The session-
+ * bound server action `createProject` and the bot API route (src/app/api/bot/
+ * quests) both funnel through here so recurrence handling, objective/inventory
+ * creation and the group-quest announcement stay a single source of truth.
+ */
+export async function createProjectForUser(
+  userId: string,
+  input: z.input<typeof createProjectSchema>,
+): Promise<Project> {
   const parsed = createProjectSchema.safeParse(input);
   if (!parsed.success) {
     throw new Error(parsed.error.issues[0]?.message ?? 'Invalid input');
@@ -546,10 +564,80 @@ async function announceGroupQuest(
   });
   const ownerName = owner?.name || owner?.username || 'Someone';
   const mentions = await discordMentionsFor(inviteeIds);
-  const party = mentions.length > 0 ? ` — party: ${mentions.join(' ')}` : '';
   const link = appLink(`/projects/${projectId}`);
-  await sendDiscordMessage(
-    `📜 **${ownerName}** started a group quest: **${title}**${party}${link ? `\n${link}` : ''}`,
+  const fields: { name: string; value: string; inline?: boolean }[] = [
+    { name: 'Quest', value: title, inline: true },
+    { name: 'Started by', value: ownerName, inline: true },
+  ];
+  if (mentions.length > 0) {
+    fields.push({ name: 'Party', value: mentions.join(' ') });
+  }
+  await sendDiscordEmbed(
+    {
+      title: '📜 New Group Quest',
+      description: `**${ownerName}** started a new group quest!`,
+      url: link || undefined,
+      color: EmbedColors.QUEST_START,
+      fields,
+      timestamp: new Date().toISOString(),
+    },
+    mentions.length > 0 ? mentions.join(' ') : undefined,
+  );
+}
+
+/**
+ * Post a "party made progress" notice to the shared Discord channel for a shared
+ * quest: who checked what off, plus the full done/remaining breakdown so the party
+ * sees where the quest stands. Pings every participant. Caller guards on a shared
+ * quest (participantIds.length > 1) and discordConfigured(); this is best-effort.
+ */
+async function announceQuestProgress(opts: {
+  projectId: string;
+  projectTitle: string;
+  actorId: string;
+  completedLabel: string;
+  participantIds: string[];
+}): Promise<void> {
+  const { projectId, projectTitle, actorId, completedLabel, participantIds } = opts;
+
+  const [actor, objectives, items, mentions] = await Promise.all([
+    prisma.user.findUnique({ where: { id: actorId }, select: { name: true, username: true } }),
+    prisma.objective.findMany({
+      where: { projectId },
+      select: { title: true, isCompleted: true },
+      orderBy: { order: 'asc' },
+    }),
+    prisma.inventoryItem.findMany({ where: { projectId }, select: { name: true, gathered: true } }),
+    discordMentionsFor(participantIds),
+  ]);
+  const actorName = actor?.name || actor?.username || 'Someone';
+
+  const done = [
+    ...objectives.filter((o) => o.isCompleted).map((o) => `✅ ${o.title}`),
+    ...items.filter((i) => i.gathered).map((i) => `✅ ${i.name}`),
+  ];
+  const remaining = [
+    ...objectives.filter((o) => !o.isCompleted).map((o) => `⬜ ${o.title}`),
+    ...items.filter((i) => !i.gathered).map((i) => `⬜ ${i.name}`),
+  ];
+
+  const link = appLink(`/projects/${projectId}`);
+  await sendDiscordEmbed(
+    {
+      title: `⚔️ Quest Progress — ${projectTitle}`,
+      description: `**${actorName}** completed **${completedLabel}**`,
+      url: link || undefined,
+      color: EmbedColors.PROGRESS,
+      fields: [
+        { name: `Done (${done.length})`, value: done.length > 0 ? done.join('\n') : '—' },
+        {
+          name: `Remaining (${remaining.length})`,
+          value: remaining.length > 0 ? remaining.join('\n') : '—',
+        },
+      ],
+      timestamp: new Date().toISOString(),
+    },
+    mentions.length > 0 ? mentions.join(' ') : undefined,
   );
 }
 
@@ -804,14 +892,34 @@ export async function toggleObjective(
       if (participantIds.length > 1 && discordConfigured()) {
         try {
           const mentions = await discordMentionsFor(participantIds);
-          const who = mentions.length > 0 ? ` ${mentions.join(' ')}` : '';
           const link = appLink(`/projects/${projectId}`);
-          await sendDiscordMessage(
-            `🏆 Group quest complete: **${objective.project.title}**!${who} 🎉${link ? `\n${link}` : ''}`,
+          await sendDiscordEmbed(
+            {
+              title: '🏆 Group Quest Complete!',
+              description: `The party finished **${objective.project.title}**! 🎉`,
+              url: link || undefined,
+              color: EmbedColors.COMPLETE,
+              timestamp: new Date().toISOString(),
+            },
+            mentions.length > 0 ? mentions.join(' ') : undefined,
           );
         } catch {
           /* ignore — Discord is a non-critical side channel */
         }
+      }
+    } else if (participantIds.length > 1 && discordConfigured()) {
+      // Shared quest, partial progress: notify the party who did what and what's
+      // left. The completing toggle is handled above, so this never double-posts.
+      try {
+        await announceQuestProgress({
+          projectId,
+          projectTitle: objective.project.title,
+          actorId: userId,
+          completedLabel: updated.title,
+          participantIds,
+        });
+      } catch {
+        /* ignore — Discord is a non-critical side channel */
       }
     }
   } else {
@@ -843,7 +951,7 @@ export async function toggleInventoryItem(
 
   const item = await prisma.inventoryItem.findUnique({
     where: { id: itemId },
-    include: { project: { select: { userId: true } } },
+    include: { project: { select: { userId: true, title: true } } },
   });
 
   if (!item) throw new Error('Item not found');
@@ -860,6 +968,20 @@ export async function toggleInventoryItem(
   if (updated.gathered) {
     for (const pid of participantIds) {
       await recordCompletionEvent(pid, CompletionType.ITEM, item.projectId, itemXp());
+    }
+    // Shared quest: notify the party that an item was gathered. Best-effort.
+    if (participantIds.length > 1 && discordConfigured()) {
+      try {
+        await announceQuestProgress({
+          projectId: item.projectId,
+          projectTitle: item.project.title,
+          actorId: userId,
+          completedLabel: updated.name,
+          participantIds,
+        });
+      } catch {
+        /* ignore — Discord is a non-critical side channel */
+      }
     }
   } else {
     for (const pid of participantIds) {
