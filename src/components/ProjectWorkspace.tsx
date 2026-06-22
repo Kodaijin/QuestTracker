@@ -48,6 +48,7 @@ import {
   deleteProject,
 } from '@/app/actions/projects';
 import type { ProjectWithRelations } from '@/app/actions/projects';
+import { leaveQuest } from '@/app/actions/party';
 import { recurrenceLabel, isMissed } from '@/lib/recurrence';
 import { deadlineCountdown, isUpcoming, formatActivatesIn } from '@/lib/timing';
 import {
@@ -205,6 +206,8 @@ export default function ProjectWorkspace({ initialProjects, projectId, currentUs
   const [isSavingTags, startSaveTags] = useTransition();
   const [isSavingTiming, startSaveTiming] = useTransition();
   const [isSavingPerms, startSavePerms] = useTransition();
+  const [isLeaving, startLeave] = useTransition();
+  const [leaveError, setLeaveError] = useState<string | null>(null);
   const [isMutatingObj, startMutateObj] = useTransition();
   const [isMutatingItem, startMutateItem] = useTransition();
   const [isSavingSeqObj, startSaveSeqObj] = useTransition();
@@ -377,6 +380,21 @@ export default function ProjectWorkspace({ initialProjects, projectId, currentUs
         router.refresh();
       } catch {
         /* best-effort; refresh will resync */
+      }
+    });
+  }
+
+  function handleLeaveQuest() {
+    if (!window.confirm('Leave this quest? The owner can re-invite you later.')) return;
+    setLeaveError(null);
+    startLeave(async () => {
+      const res = await leaveQuest({ projectId });
+      if (res.ok) {
+        // The quest is no longer on this hero's board — head back to the dashboard.
+        router.push('/');
+        router.refresh();
+      } else {
+        setLeaveError(res.error);
       }
     });
   }
@@ -1290,11 +1308,25 @@ export default function ProjectWorkspace({ initialProjects, projectId, currentUs
                 </span>
               </label>
             ) : (
-              <p className="text-sm text-zinc-400">
-                {project.membersCanEdit
-                  ? 'You can edit this shared quest — add and check off objectives and inventory.'
-                  : 'You can check off progress on this shared quest. Only the owner can change its objectives and settings.'}
-              </p>
+              <>
+                <p className="text-sm text-zinc-400">
+                  {project.membersCanEdit
+                    ? 'You can edit this shared quest — add and check off objectives and inventory.'
+                    : 'You can check off progress on this shared quest. Only the owner can change its objectives and settings.'}
+                </p>
+                <div className="pt-1">
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={handleLeaveQuest}
+                    disabled={isLeaving}
+                    className="text-red-400 hover:text-red-300"
+                  >
+                    {isLeaving ? 'Leaving…' : 'Leave quest'}
+                  </Button>
+                  {leaveError && <p className="mt-1 text-sm text-red-400">{leaveError}</p>}
+                </div>
+              </>
             )}
           </CardContent>
         </Card>

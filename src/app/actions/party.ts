@@ -347,6 +347,47 @@ export async function respondToQuestInvite(input: {
   return { ok: true };
 }
 
+const leaveQuestSchema = z.object({
+  projectId: z.string().min(1),
+});
+
+/**
+ * Leave a shared quest you were invited to (pending or accepted). Removes your
+ * QuestMember row only — the quest stays for its owner and other members, and any
+ * XP you already earned from it is untouched (it lives in the CompletionEvent log).
+ * The owner can't leave their own quest; they delete it instead.
+ */
+export async function leaveQuest(input: {
+  projectId: string;
+}): Promise<PartyActionResult> {
+  const parsed = leaveQuestSchema.safeParse(input);
+  if (!parsed.success) {
+    return { ok: false, error: parsed.error.issues[0]?.message ?? 'Invalid input' };
+  }
+
+  const userId = await requireUserId();
+  const { projectId } = parsed.data;
+
+  const project = await prisma.project.findUnique({
+    where: { id: projectId },
+    select: { userId: true },
+  });
+  if (!project) return { ok: false, error: 'Quest not found.' };
+  if (project.userId === userId) {
+    return { ok: false, error: 'You own this quest — delete it instead of leaving.' };
+  }
+
+  const membership = await prisma.questMember.findUnique({
+    where: { projectId_userId: { projectId, userId } },
+  });
+  if (!membership) return { ok: false, error: 'You are not a member of this quest.' };
+
+  await prisma.questMember.delete({
+    where: { projectId_userId: { projectId, userId } },
+  });
+  return { ok: true };
+}
+
 export async function listQuestInvites(): Promise<QuestInvite[]> {
   const userId = await requireUserId();
 
