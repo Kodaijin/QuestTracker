@@ -230,6 +230,34 @@ export function isMissed(quest: SchedulableQuest, now: Date): boolean {
   return quest.dueDate != null && now > quest.dueDate && !isCompletedThisCycle(quest);
 }
 
+// ── Cadence categorisation ────────────────────────────────────────────────────
+
+export type QuestCategory = 'daily' | 'weekly' | 'other';
+
+/**
+ * Buckets a quest into a broad cadence category for grouped UI display.
+ * Daily = DAILY (and every-1-day); Weekly = WEEKLY / specific weekdays /
+ * every-N-weeks; everything else (one-off, monthly, specific date, every-N-days
+ * where N>1) falls under Other.
+ */
+export function questCategory(quest: {
+  recurrenceType: RecurrenceType;
+  intervalDays: number | null;
+}): QuestCategory {
+  switch (quest.recurrenceType) {
+    case RecurrenceType.DAILY:
+      return 'daily';
+    case RecurrenceType.EVERY_N_DAYS:
+      return quest.intervalDays === 1 ? 'daily' : 'other';
+    case RecurrenceType.WEEKLY:
+    case RecurrenceType.DAYS_OF_WEEK:
+    case RecurrenceType.EVERY_N_WEEKS:
+      return 'weekly';
+    default: // NONE, MONTHLY, SPECIFIC_DATE
+      return 'other';
+  }
+}
+
 // ── Human-readable label helpers ──────────────────────────────────────────────
 
 const WEEKDAY_NAMES = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'] as const;

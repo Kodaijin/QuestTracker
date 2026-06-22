@@ -31,7 +31,7 @@ Built with Next.js (App Router), Prisma, PostgreSQL, and NextAuth, and fully con
 - **Difficulty & rarity**: tag a quest Trivial → Legendary. Harder quests award more XP and glow brighter on the board
 - **Daily streaks**: keep a flame going by completing something each day. Tracks your current and longest streak with at-risk warnings
 - **Hero profile** (`/hero`): your home base for level, XP bar, rank title, streaks, lifetime stats, and recent badges
-- **Today / Agenda** (`/today`): active quests bucketed into Overdue, Due today, This week, and No date
+- **Today / Agenda** (`/today`): active quests grouped into Daily, Weekly, and Other containers (sorted most-urgent-first, with per-row countdowns and overdue coloring)
 - **Calendar** (`/calendar`): a month grid plotting recurring and scheduled quests
 - **Insights** (`/insights`): a contribution heatmap, XP over time, completions by type, quests by difficulty, and achievement progress
 - **Tags, search & filters**: tag quests for grouping, then search and filter the board by text, difficulty, or tag
@@ -261,6 +261,13 @@ quest-creation logic (`createProjectForUser`) as the web UI.
 - **CosmeticUnlock**: a cosmetic the user bought with gems (ownership only). The gem balance is derived as `earned − sum(owned prices)`, never stored as a counter. Equipped selections live on `User` (`themeId`/`xpBarId`/`frameId`/`particleId`/`backgroundId`), and the catalog and economy are code-defined in `src/lib/cosmetics.ts`. Free cosmetics (such as the default backgrounds) can be equipped without a purchase, and the per-user `cosmeticsFree` flag unlocks everything for users who opt out of the gem economy
 
 ## Changelog
+
+### 2026-06-22: Daily / Weekly / Other cadence containers
+
+- The dashboard's **active board** is now split into bordered **Daily / Weekly / Other** containers so daily and weekly commitments are easy to scan at a glance. Daily = `DAILY` (and every-1-day); Weekly = `WEEKLY` / specific weekdays / every-N-weeks; everything else (one-off, monthly, specific date, every-N-days) falls under Other. Empty containers are hidden, and Upcoming/Completed sections are unchanged
+- Drag-and-drop and the ↑/↓ buttons now **reorder within a container** (no cross-container moves); the persisted board order is rebuilt from the groups so existing `reorderProjects` persistence is unchanged
+- The **Today** page (`/today`) groups by the same cadence containers instead of urgency buckets; each row still shows its countdown, overdue coloring, and recurrence label, and rows are sorted most-urgent-first within each container
+- New shared `questCategory` helper + `QuestCategory` type in `src/lib/recurrence.ts`, used by `DashboardClient.tsx` and `TodayClient.tsx`
 
 ### 2026-06-22: Leave a shared quest
 

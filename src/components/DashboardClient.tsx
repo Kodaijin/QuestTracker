@@ -25,7 +25,7 @@ import { useProjectStore } from '@/store/useProjectStore';
 import { createProject, deleteProject, reorderProjects } from '@/app/actions/projects';
 import type { ProjectWithRelations } from '@/app/actions/projects';
 import type { Ally } from '@/app/actions/party';
-import { recurrenceLabel, isMissed } from '@/lib/recurrence';
+import { recurrenceLabel, isMissed, questCategory, type QuestCategory } from '@/lib/recurrence';
 import { getQuestStatus, questProgress, type QuestStatus } from '@/lib/quest';
 import { difficultyMeta, DIFFICULTIES } from '@/lib/difficulty';
 import { isUpcoming, deadlineCountdown, formatActivatesIn } from '@/lib/timing';
@@ -52,6 +52,13 @@ const statusCardStyles: Record<QuestStatus, string> = {
   'in-progress': 'border-indigo-500/40 group-hover:border-indigo-400/70',
   completed: 'border-emerald-500/40 group-hover:border-emerald-400/70',
 };
+
+// Cadence containers for the active board. Order here is the display order.
+const CATEGORY_META: { key: QuestCategory; label: string; border: string; accent: string }[] = [
+  { key: 'daily', label: '☀ Daily', border: 'border-amber-500/30', accent: 'text-amber-300' },
+  { key: 'weekly', label: '🗓 Weekly', border: 'border-indigo-500/30', accent: 'text-indigo-300' },
+  { key: 'other', label: '◆ Other', border: 'border-zinc-800/80', accent: 'text-zinc-400' },
+];
 
 type AvailabilityPreset = 'now' | '1d' | '1w' | '2w' | '1m' | 'date';
 
@@ -217,6 +224,14 @@ export default function DashboardClient({
   const activeProjects = notCompleted
     .filter((p) => !isUpcoming(p.availableAt, now))
     .sort((a, b) => a.sortOrder - b.sortOrder);
+  // Split the active board into cadence containers (Daily / Weekly / Other), each
+  // preserving the manual sortOrder above. Reordering happens within a container.
+  const activeByCat: Record<QuestCategory, ProjectWithRelations[]> = {
+    daily: [],
+    weekly: [],
+    other: [],
+  };
+  for (const p of activeProjects) activeByCat[questCategory(p)].push(p);
   const completedProjects = visible
     .filter((p) => getQuestStatus(p, projects) === 'completed')
     .sort((a, b) => a.sortOrder - b.sortOrder);
@@ -460,12 +475,23 @@ export default function DashboardClient({
     });
   }
 
-  function moveActiveQuest(index: number, direction: 'up' | 'down') {
+  // Reorder happens within a single cadence container. We splice the container's
+  // new order back into the full active list (Daily, then Weekly, then Other) and
+  // persist that — cross-container order is irrelevant to display.
+  function persistGroupedOrder(category: QuestCategory, nextGroup: ProjectWithRelations[]) {
+    const merged = (['daily', 'weekly', 'other'] as QuestCategory[]).flatMap((cat) =>
+      cat === category ? nextGroup : activeByCat[cat],
+    );
+    persistActiveOrder(merged);
+  }
+
+  function moveActiveQuest(category: QuestCategory, index: number, direction: 'up' | 'down') {
+    const group = activeByCat[category];
     const swapIdx = direction === 'up' ? index - 1 : index + 1;
-    if (swapIdx < 0 || swapIdx >= activeProjects.length) return;
-    const next = [...activeProjects];
+    if (swapIdx < 0 || swapIdx >= group.length) return;
+    const next = [...group];
     [next[index], next[swapIdx]] = [next[swapIdx], next[index]];
-    persistActiveOrder(next);
+    persistGroupedOrder(category, next);
   }
 
   // Drag-and-drop: touch-friendly reordering via a grip handle on each card.
@@ -474,13 +500,14 @@ export default function DashboardClient({
     useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
   );
 
-  function handleDragEnd(event: DragEndEvent) {
+  function handleDragEnd(category: QuestCategory, event: DragEndEvent) {
     const { active, over } = event;
     if (!over || active.id === over.id) return;
-    const oldIndex = activeProjects.findIndex((p) => p.id === active.id);
-    const newIndex = activeProjects.findIndex((p) => p.id === over.id);
+    const group = activeByCat[category];
+    const oldIndex = group.findIndex((p) => p.id === active.id);
+    const newIndex = group.findIndex((p) => p.id === over.id);
     if (oldIndex === -1 || newIndex === -1) return;
-    persistActiveOrder(arrayMove(activeProjects, oldIndex, newIndex));
+    persistGroupedOrder(category, arrayMove(group, oldIndex, newIndex));
   }
 
   function renderQuestCard(
@@ -654,7 +681,7 @@ export default function DashboardClient({
                   onClick={(e) => {
                     e.stopPropagation();
                     e.preventDefault();
-                    moveActiveQuest(index, 'up');
+                    moveActiveQuest(questCategory(project), index, 'up');
                   }}
                   disabled={index === 0 || isReordering}
                   aria-label={`Move "${project.title}" earlier`}
@@ -666,7 +693,7 @@ export default function DashboardClient({
                   onClick={(e) => {
                     e.stopPropagation();
                     e.preventDefault();
-                    moveActiveQuest(index, 'down');
+                    moveActiveQuest(questCategory(project), index, 'down');
                   }}
                   disabled={index === listLength - 1 || isReordering}
                   aria-label={`Move "${project.title}" later`}
@@ -1432,38 +1459,59 @@ export default function DashboardClient({
         </div>
       ) : (
         <>
-          {/* Active quests section */}
+          {/* Active quests section — split into cadence containers */}
           {activeProjects.length === 0 && completedProjects.length > 0 ? (
             <p className="text-sm text-zinc-500">No active quests.</p>
           ) : (
-            filtersActive ? (
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
-                {activeProjects.map((project, i) =>
-                  renderQuestCard(project, i, false, false, activeProjects.length),
-                )}
-              </div>
-            ) : (
-              <DndContext
-                sensors={dndSensors}
-                collisionDetection={closestCenter}
-                onDragEnd={handleDragEnd}
-              >
-                <SortableContext
-                  items={activeProjects.map((p) => p.id)}
-                  strategy={rectSortingStrategy}
-                >
-                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
-                    {activeProjects.map((project, i) => (
-                      <SortableQuestCard key={project.id} id={project.id}>
-                        {(bag) =>
-                          renderQuestCard(project, i, false, true, activeProjects.length, bag)
-                        }
-                      </SortableQuestCard>
-                    ))}
-                  </div>
-                </SortableContext>
-              </DndContext>
-            )
+            <div className="space-y-6">
+              {CATEGORY_META.map(({ key, label, border, accent }) => {
+                const group = activeByCat[key];
+                if (group.length === 0) return null;
+                return (
+                  <section
+                    key={key}
+                    className={cn('rounded-xl border bg-zinc-900/40 p-4', border)}
+                  >
+                    <h2
+                      className={cn(
+                        'text-sm font-semibold uppercase tracking-wide mb-4',
+                        accent,
+                      )}
+                    >
+                      {label} · {group.length}
+                    </h2>
+                    {filtersActive ? (
+                      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
+                        {group.map((project, i) =>
+                          renderQuestCard(project, i, false, false, group.length),
+                        )}
+                      </div>
+                    ) : (
+                      <DndContext
+                        sensors={dndSensors}
+                        collisionDetection={closestCenter}
+                        onDragEnd={(event) => handleDragEnd(key, event)}
+                      >
+                        <SortableContext
+                          items={group.map((p) => p.id)}
+                          strategy={rectSortingStrategy}
+                        >
+                          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
+                            {group.map((project, i) => (
+                              <SortableQuestCard key={project.id} id={project.id}>
+                                {(bag) =>
+                                  renderQuestCard(project, i, false, true, group.length, bag)
+                                }
+                              </SortableQuestCard>
+                            ))}
+                          </div>
+                        </SortableContext>
+                      </DndContext>
+                    )}
+                  </section>
+                );
+              })}
+            </div>
           )}
 
           {/* Upcoming quests section */}

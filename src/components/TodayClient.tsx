@@ -4,7 +4,7 @@ import { useEffect } from 'react';
 import Link from 'next/link';
 import { useProjectStore } from '@/store/useProjectStore';
 import type { ProjectWithRelations } from '@/app/actions/projects';
-import { recurrenceLabel, isMissed } from '@/lib/recurrence';
+import { recurrenceLabel, questCategory, type QuestCategory } from '@/lib/recurrence';
 import { getQuestStatus, questProgress } from '@/lib/quest';
 import { difficultyMeta } from '@/lib/difficulty';
 import { isUpcoming, deadlineCountdown } from '@/lib/timing';
@@ -19,22 +19,17 @@ interface Props {
   initialProjects: ProjectWithRelations[];
 }
 
-type Bucket = 'overdue' | 'today' | 'week' | 'none';
+// Cadence containers. Order here is the display order.
+const CATEGORY_META: { key: QuestCategory; label: string; border: string; accent: string }[] = [
+  { key: 'daily', label: '☀ Daily', border: 'border-amber-500/30', accent: 'text-amber-300' },
+  { key: 'weekly', label: '🗓 Weekly', border: 'border-indigo-500/30', accent: 'text-indigo-300' },
+  { key: 'other', label: '◆ Other', border: 'border-zinc-800/80', accent: 'text-zinc-400' },
+];
 
-const BUCKET_META: Record<Bucket, { label: string; accent: string }> = {
-  overdue: { label: '⚠ Overdue', accent: 'text-red-300' },
-  today: { label: '☀ Due today', accent: 'text-amber-300' },
-  week: { label: '🗓 This week', accent: 'text-indigo-300' },
-  none: { label: '◷ No due date', accent: 'text-zinc-400' },
-};
-
-const BUCKET_ORDER: Bucket[] = ['overdue', 'today', 'week', 'none'];
-
-/** Midnight (local) at the start of the given date. */
-function startOfDay(d: Date): Date {
-  const copy = new Date(d);
-  copy.setHours(0, 0, 0, 0);
-  return copy;
+/** Effective due date for sorting — a finish-by deadline takes priority. */
+function effectiveDueTime(project: ProjectWithRelations): number {
+  const due = project.deadline ?? project.dueDate;
+  return due ? new Date(due).getTime() : Number.POSITIVE_INFINITY;
 }
 
 export default function TodayClient({ initialProjects }: Props) {
@@ -47,9 +42,6 @@ export default function TodayClient({ initialProjects }: Props) {
 
   const projects = storeProjects.length > 0 ? storeProjects : initialProjects;
   const now = new Date();
-  const todayStart = startOfDay(now);
-  const weekEnd = new Date(todayStart);
-  weekEnd.setDate(weekEnd.getDate() + 7);
 
   // Active, top-level quests that are available now (upcoming ones are excluded
   // — they're not actionable yet).
@@ -60,34 +52,16 @@ export default function TodayClient({ initialProjects }: Props) {
       !isUpcoming(p.availableAt, now),
   );
 
-  function bucketFor(project: ProjectWithRelations): Bucket {
-    const schedulable = {
-      ...project,
-      dueDate: project.dueDate ? new Date(project.dueDate) : null,
-      specificDate: project.specificDate ? new Date(project.specificDate) : null,
-    };
-    // A finish-by deadline takes priority over recurrence due date for bucketing.
-    const effectiveDue = project.deadline
-      ? new Date(project.deadline)
-      : project.dueDate
-        ? new Date(project.dueDate)
-        : null;
-    if (project.deadline == null && isMissed(schedulable, now)) return 'overdue';
-    if (!effectiveDue) return 'none';
-    if (effectiveDue < todayStart) return 'overdue';
-    const dueStart = startOfDay(effectiveDue);
-    if (dueStart.getTime() === todayStart.getTime()) return 'today';
-    if (effectiveDue <= weekEnd) return 'week';
-    return 'none';
-  }
-
-  const grouped: Record<Bucket, ProjectWithRelations[]> = {
-    overdue: [],
-    today: [],
-    week: [],
-    none: [],
+  // Group by cadence (Daily / Weekly / Other); within each, most urgent first.
+  const grouped: Record<QuestCategory, ProjectWithRelations[]> = {
+    daily: [],
+    weekly: [],
+    other: [],
   };
-  for (const p of active) grouped[bucketFor(p)].push(p);
+  for (const p of active) grouped[questCategory(p)].push(p);
+  for (const key of Object.keys(grouped) as QuestCategory[]) {
+    grouped[key].sort((a, b) => effectiveDueTime(a) - effectiveDueTime(b));
+  }
 
   function renderRow(project: ProjectWithRelations) {
     const { done, total } = questProgress(project, projects);
@@ -175,14 +149,14 @@ export default function TodayClient({ initialProjects }: Props) {
           Nothing active right now — enjoy the calm, hero.
         </div>
       ) : (
-        <div className="space-y-8">
-          {BUCKET_ORDER.map((bucket) => {
-            const items = grouped[bucket];
+        <div className="space-y-6">
+          {CATEGORY_META.map(({ key, label, border, accent }) => {
+            const items = grouped[key];
             if (items.length === 0) return null;
             return (
-              <section key={bucket}>
-                <h2 className={cn('text-sm font-semibold uppercase tracking-wide mb-3', BUCKET_META[bucket].accent)}>
-                  {BUCKET_META[bucket].label} · {items.length}
+              <section key={key} className={cn('rounded-xl border bg-zinc-900/40 p-4', border)}>
+                <h2 className={cn('text-sm font-semibold uppercase tracking-wide mb-4', accent)}>
+                  {label} · {items.length}
                 </h2>
                 <div className="space-y-2.5">{items.map(renderRow)}</div>
               </section>
