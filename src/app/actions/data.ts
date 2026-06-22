@@ -45,6 +45,8 @@ export interface ExportedQuest {
   recurrenceType: RecurrenceType;
   dayOfWeek: number | null;
   intervalWeeks: number | null;
+  intervalDays: number | null;
+  daysOfWeek: number[];
   dayOfMonth: number | null;
   specificDate: string | null;
   availableAt: string | null;
@@ -72,6 +74,8 @@ type DbQuest = {
   recurrenceType: RecurrenceType;
   dayOfWeek: number | null;
   intervalWeeks: number | null;
+  intervalDays: number | null;
+  daysOfWeek: number[];
   dayOfMonth: number | null;
   specificDate: Date | null;
   availableAt: Date | null;
@@ -93,6 +97,8 @@ function serializeQuest(q: DbQuest, subQuests: ExportedQuest[]): ExportedQuest {
     recurrenceType: q.recurrenceType,
     dayOfWeek: q.dayOfWeek,
     intervalWeeks: q.intervalWeeks,
+    intervalDays: q.intervalDays,
+    daysOfWeek: q.daysOfWeek,
     dayOfMonth: q.dayOfMonth,
     specificDate: q.specificDate ? q.specificDate.toISOString() : null,
     availableAt: q.availableAt ? q.availableAt.toISOString() : null,
@@ -162,6 +168,8 @@ const questSchema: z.ZodType<ImportedQuest> = z.lazy(() =>
     recurrenceType: z.nativeEnum(RecurrenceType).optional().default(RecurrenceType.NONE),
     dayOfWeek: z.number().int().min(0).max(6).nullish(),
     intervalWeeks: z.number().int().min(1).nullish(),
+    intervalDays: z.number().int().min(1).nullish(),
+    daysOfWeek: z.array(z.number().int().min(0).max(6)).optional().default([]),
     dayOfMonth: z.number().int().min(1).max(31).nullish(),
     specificDate: z.string().nullish(),
     availableAt: z.string().nullish(),
@@ -184,6 +192,8 @@ interface ImportedQuest {
   recurrenceType: RecurrenceType;
   dayOfWeek?: number | null;
   intervalWeeks?: number | null;
+  intervalDays?: number | null;
+  daysOfWeek: number[];
   dayOfMonth?: number | null;
   specificDate?: string | null;
   availableAt?: string | null;
@@ -217,6 +227,11 @@ function recurrenceFor(q: ImportedQuest) {
         ? q.dayOfWeek ?? null
         : null,
     intervalWeeks: type === RecurrenceType.EVERY_N_WEEKS ? q.intervalWeeks ?? null : null,
+    intervalDays: type === RecurrenceType.EVERY_N_DAYS ? q.intervalDays ?? null : null,
+    daysOfWeek:
+      type === RecurrenceType.DAYS_OF_WEEK
+        ? Array.from(new Set(q.daysOfWeek)).sort((a, b) => a - b)
+        : [],
     dayOfMonth: type === RecurrenceType.MONTHLY ? q.dayOfMonth ?? null : null,
     specificDate:
       type === RecurrenceType.SPECIFIC_DATE ? parseDate(q.specificDate) : null,
@@ -312,6 +327,8 @@ export async function importQuests(
         recurrenceType: rec.recurrenceType,
         dayOfWeek: rec.dayOfWeek,
         intervalWeeks: rec.intervalWeeks,
+        intervalDays: rec.intervalDays,
+        daysOfWeek: rec.daysOfWeek,
         dayOfMonth: rec.dayOfMonth,
         specificDate: rec.specificDate,
         dueDate: rec.dueDate,

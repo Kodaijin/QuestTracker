@@ -159,6 +159,8 @@ export default function DashboardClient({
   const [recurrenceType, setRecurrenceType] = useState<RecurrenceType>(RecurrenceType.NONE);
   const [dayOfWeek, setDayOfWeek] = useState<number>(1);
   const [intervalWeeks, setIntervalWeeks] = useState<number>(2);
+  const [intervalDays, setIntervalDays] = useState<number>(2);
+  const [daysOfWeek, setDaysOfWeek] = useState<number[]>([]);
   const [dayOfMonth, setDayOfMonth] = useState<number>(1);
   const [specificDate, setSpecificDate] = useState<string>('');
 
@@ -242,6 +244,8 @@ export default function DashboardClient({
     setRecurrenceType(RecurrenceType.NONE);
     setDayOfWeek(1);
     setIntervalWeeks(2);
+    setIntervalDays(2);
+    setDaysOfWeek([]);
     setDayOfMonth(1);
     setSpecificDate('');
   }
@@ -289,6 +293,11 @@ export default function DashboardClient({
 
     if (recurrenceType === RecurrenceType.SPECIFIC_DATE && !specificDate) {
       setError('Please choose a specific date for the recurrence');
+      return;
+    }
+
+    if (recurrenceType === RecurrenceType.DAYS_OF_WEEK && daysOfWeek.length === 0) {
+      setError('Pick at least one day of the week for the recurrence');
       return;
     }
 
@@ -353,6 +362,14 @@ export default function DashboardClient({
     );
   }
 
+  function toggleRecurrenceDay(day: number) {
+    setDaysOfWeek((prev) =>
+      prev.includes(day)
+        ? prev.filter((d) => d !== day)
+        : [...prev, day].sort((a, b) => a - b),
+    );
+  }
+
   function commitTag() {
     const t = tagDraft.trim();
     if (!t) return;
@@ -405,6 +422,10 @@ export default function DashboardClient({
         return { recurrenceType: RecurrenceType.WEEKLY, dayOfWeek };
       case RecurrenceType.EVERY_N_WEEKS:
         return { recurrenceType: RecurrenceType.EVERY_N_WEEKS, dayOfWeek, intervalWeeks };
+      case RecurrenceType.EVERY_N_DAYS:
+        return { recurrenceType: RecurrenceType.EVERY_N_DAYS, intervalDays };
+      case RecurrenceType.DAYS_OF_WEEK:
+        return { recurrenceType: RecurrenceType.DAYS_OF_WEEK, daysOfWeek };
       case RecurrenceType.MONTHLY:
         return { recurrenceType: RecurrenceType.MONTHLY, dayOfMonth };
       case RecurrenceType.SPECIFIC_DATE:
@@ -1153,12 +1174,62 @@ export default function DashboardClient({
                 >
                   <option value={RecurrenceType.NONE}>None</option>
                   <option value={RecurrenceType.DAILY}>Daily</option>
+                  <option value={RecurrenceType.EVERY_N_DAYS}>Every N days</option>
                   <option value={RecurrenceType.WEEKLY}>Weekly</option>
+                  <option value={RecurrenceType.DAYS_OF_WEEK}>Days of week</option>
                   <option value={RecurrenceType.EVERY_N_WEEKS}>Every N weeks</option>
                   <option value={RecurrenceType.MONTHLY}>Monthly</option>
                   <option value={RecurrenceType.SPECIFIC_DATE}>Specific date</option>
                 </select>
               </div>
+
+              {recurrenceType === RecurrenceType.EVERY_N_DAYS && (
+                <div>
+                  <label
+                    htmlFor="quest-interval-days"
+                    className="block text-sm font-medium text-zinc-300 mb-1.5"
+                  >
+                    Every N days
+                  </label>
+                  <input
+                    id="quest-interval-days"
+                    type="number"
+                    min={1}
+                    value={intervalDays}
+                    onChange={(e) => setIntervalDays(Math.max(1, Number(e.target.value)))}
+                    className="field"
+                  />
+                </div>
+              )}
+
+              {recurrenceType === RecurrenceType.DAYS_OF_WEEK && (
+                <div>
+                  <label className="block text-sm font-medium text-zinc-300 mb-1.5">
+                    Days of week <span className="text-zinc-500">(pick one or more)</span>
+                  </label>
+                  <div className="flex flex-wrap gap-2">
+                    {WEEKDAY_OPTIONS.map((opt) => {
+                      const selected = daysOfWeek.includes(opt.value);
+                      return (
+                        <button
+                          key={opt.value}
+                          type="button"
+                          onClick={() => toggleRecurrenceDay(opt.value)}
+                          aria-pressed={selected}
+                          className={cn(
+                            'rounded-lg border px-3 py-1.5 text-sm font-medium transition-all',
+                            selected
+                              ? 'border-indigo-500/60 bg-indigo-950/40 text-indigo-200'
+                              : 'border-zinc-700 bg-zinc-800/50 text-zinc-400 hover:text-zinc-200',
+                          )}
+                        >
+                          {opt.label.slice(0, 3)}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
 
               {recurrenceType === RecurrenceType.WEEKLY && (
                 <div>

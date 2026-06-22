@@ -10,6 +10,8 @@ export interface SchedulableQuest {
   recurrenceType: RecurrenceType;
   dayOfWeek: number | null;
   intervalWeeks: number | null;
+  intervalDays: number | null;
+  daysOfWeek: number[];
   dayOfMonth: number | null;
   specificDate: Date | null;
   dueDate: Date | null;
@@ -19,7 +21,13 @@ export interface SchedulableQuest {
 // Subset used by compute functions (no objectives needed for scheduling)
 type RecurrenceConfig = Pick<
   SchedulableQuest,
-  'recurrenceType' | 'dayOfWeek' | 'intervalWeeks' | 'dayOfMonth' | 'specificDate'
+  | 'recurrenceType'
+  | 'dayOfWeek'
+  | 'intervalWeeks'
+  | 'intervalDays'
+  | 'daysOfWeek'
+  | 'dayOfMonth'
+  | 'specificDate'
 >;
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -42,6 +50,19 @@ function nextWeekday(from: Date, targetDay: number): Date {
   const diff = (targetDay - copy.getDay() + 7) % 7;
   copy.setDate(copy.getDate() + diff);
   return copy;
+}
+
+/**
+ * Earliest date (on or after `from`) whose weekday is in `days` (0=Sun..6=Sat).
+ * Returns null when `days` is empty.
+ */
+function nextSelectedWeekday(from: Date, days: number[]): Date | null {
+  let best: Date | null = null;
+  for (const d of days) {
+    const cand = nextWeekday(from, d);
+    if (best == null || cand < best) best = cand;
+  }
+  return best;
 }
 
 /** Returns the last day of the month for a given year/month (0-indexed month). */
@@ -78,6 +99,16 @@ export function computeFirstDueDate(cfg: RecurrenceConfig, now: Date): Date | nu
       // dayOfWeek is required (caller validated)
       const target = nextWeekday(now, cfg.dayOfWeek as number);
       return endOfDay(target);
+    }
+
+    case RecurrenceType.EVERY_N_DAYS:
+      // First occurrence is today; subsequent ones step by intervalDays.
+      return endOfDay(now);
+
+    case RecurrenceType.DAYS_OF_WEEK: {
+      // The soonest selected weekday on or after now (daysOfWeek validated non-empty).
+      const target = nextSelectedWeekday(now, cfg.daysOfWeek);
+      return target ? endOfDay(target) : null;
     }
 
     case RecurrenceType.MONTHLY: {
@@ -123,6 +154,15 @@ export function computeNextDueDate(cfg: RecurrenceConfig, currentDue: Date): Dat
     case RecurrenceType.EVERY_N_WEEKS: {
       const weeks = (cfg.intervalWeeks as number) * 7;
       return endOfDay(addDays(currentDue, weeks));
+    }
+
+    case RecurrenceType.EVERY_N_DAYS:
+      return endOfDay(addDays(currentDue, cfg.intervalDays as number));
+
+    case RecurrenceType.DAYS_OF_WEEK: {
+      // The next selected weekday strictly after currentDue.
+      const target = nextSelectedWeekday(addDays(currentDue, 1), cfg.daysOfWeek);
+      return target ? endOfDay(target) : null;
     }
 
     case RecurrenceType.MONTHLY: {
@@ -225,6 +265,12 @@ export function recurrenceLabel(quest: SchedulableQuest): string {
 
     case RecurrenceType.EVERY_N_WEEKS:
       return `Every ${quest.intervalWeeks} weeks · ${weekdayName(quest.dayOfWeek as number)}`;
+
+    case RecurrenceType.EVERY_N_DAYS:
+      return quest.intervalDays === 1 ? 'Daily' : `Every ${quest.intervalDays} days`;
+
+    case RecurrenceType.DAYS_OF_WEEK:
+      return `Weekly · ${[...quest.daysOfWeek].sort((a, b) => a - b).map(weekdayName).join(', ')}`;
 
     case RecurrenceType.MONTHLY:
       return `Monthly · ${ordinal(quest.dayOfMonth as number)}`;

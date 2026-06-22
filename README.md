@@ -37,7 +37,7 @@ Built with Next.js (App Router), Prisma, PostgreSQL, and NextAuth, and fully con
 - **Tags, search & filters**: tag quests for grouping, then search and filter the board by text, difficulty, or tag
 - **Achievements**: 50+ cheeky badges (including streak milestones) unlocked just by using the app, tracked per user and never revoked once earned
 - **Completion effects**: a quick sparkle and glow when you check an objective, and a "Quest Complete!" celebration when a quest is finished. On level-ups, quest completions, and companion evolutions the celebration plays as a WebGL particle burst with bloom where WebGL is available, and falls back to the CSS effect otherwise. All of it respects `prefers-reduced-motion`
-- **Recurring quests**: daily, weekly, every N weeks, monthly, or a specific date. Elapsed quests advance automatically on load
+- **Recurring quests**: daily, every N days, weekly, on a set of weekdays (e.g. Mon/Wed/Fri), every N weeks, monthly, or a specific date. Elapsed quests advance automatically on load
 - **Party & group quests** (`/party`): add allies by unique username (they accept or decline), then share a quest with chosen allies when you create it. Invited heroes accept per invite. Once joined, the party shares the same progress and every member earns XP when it's completed. Members can always check off shared progress, and the owner can let members edit the quest too (objectives, inventory, and settings) with a per-quest toggle. Only the owner can delete it. Either ally can remove the other at any time, which also severs their shared-quest memberships in both directions. A notice badge in the nav surfaces pending ally requests and quest invites
 - **Companion pet**: adopt a companion from a wide roster (cat, dragon, fox spirit, dog, owl, penguin, unicorn, and more) on your hero page. It evolves as you level up (Egg → Hatchling → Juvenile → Adult → Mythic) and reacts to your streak with a mood, and each evolution gets its own celebration
 - **Reminders** (`/notifications`): opt-in web push notifications (delivered even when the app is closed) plus an in-app alert center for come-back nudges, streak-at-risk warnings, approaching quest deadlines, and a "your companion misses you" poke. Per-type toggles and a daily reminder time live in Settings
@@ -261,6 +261,11 @@ quest-creation logic (`createProjectForUser`) as the web UI.
 - **CosmeticUnlock**: a cosmetic the user bought with gems (ownership only). The gem balance is derived as `earned − sum(owned prices)`, never stored as a counter. Equipped selections live on `User` (`themeId`/`xpBarId`/`frameId`/`particleId`/`backgroundId`), and the catalog and economy are code-defined in `src/lib/cosmetics.ts`. Free cosmetics (such as the default backgrounds) can be equipped without a purchase, and the per-user `cosmeticsFree` flag unlocks everything for users who opt out of the gem economy
 
 ## Changelog
+
+### 2026-06-22: More recurrence options — every N days & multiple weekdays
+
+- Two new repeat schedules: **Every N days** (`EVERY_N_DAYS` + `Project.intervalDays`) and **Days of week** for picking multiple weekdays like Mon/Wed/Fri (`DAYS_OF_WEEK` + `Project.daysOfWeek` int array). Available in the New Quest form and a quest's Schedule editor
+- Recurrence math, labels, calendar plotting, validation, and JSON export/import all handle the new kinds (`src/lib/recurrence.ts`, `src/app/actions/projects.ts`, `src/app/actions/data.ts`)
 
 ### 2026-06-22: Drag-and-drop everywhere + touch-visible controls
 

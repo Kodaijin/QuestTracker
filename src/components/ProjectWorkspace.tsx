@@ -181,6 +181,8 @@ export default function ProjectWorkspace({ initialProjects, projectId, currentUs
   const [schedRecurrenceType, setSchedRecurrenceType] = useState<RecurrenceType>(RecurrenceType.NONE);
   const [schedDayOfWeek, setSchedDayOfWeek] = useState<number>(1);
   const [schedIntervalWeeks, setSchedIntervalWeeks] = useState<number>(2);
+  const [schedIntervalDays, setSchedIntervalDays] = useState<number>(2);
+  const [schedDaysOfWeek, setSchedDaysOfWeek] = useState<number[]>([]);
   const [schedDayOfMonth, setSchedDayOfMonth] = useState<number>(1);
   const [schedSpecificDate, setSchedSpecificDate] = useState<string>('');
   const [schedError, setSchedError] = useState<string | null>(null);
@@ -226,6 +228,8 @@ export default function ProjectWorkspace({ initialProjects, projectId, currentUs
     setSchedRecurrenceType(project.recurrenceType);
     setSchedDayOfWeek(project.dayOfWeek ?? 1);
     setSchedIntervalWeeks(project.intervalWeeks ?? 2);
+    setSchedIntervalDays(project.intervalDays ?? 2);
+    setSchedDaysOfWeek(project.daysOfWeek ?? []);
     setSchedDayOfMonth(project.dayOfMonth ?? 1);
     setSchedSpecificDate(toDateInputValue(project.specificDate));
     setSchedInitialised(true);
@@ -542,12 +546,25 @@ export default function ProjectWorkspace({ initialProjects, projectId, currentUs
 
   // ── Handler: save schedule ────────────────────────────────────────────────────
 
+  function toggleSchedDay(day: number) {
+    setSchedDaysOfWeek((prev) =>
+      prev.includes(day)
+        ? prev.filter((d) => d !== day)
+        : [...prev, day].sort((a, b) => a - b),
+    );
+  }
+
   function handleSaveSchedule() {
     if (!project) return;
     setSchedError(null);
 
     if (schedRecurrenceType === RecurrenceType.SPECIFIC_DATE && !schedSpecificDate) {
       setSchedError('Please choose a specific date');
+      return;
+    }
+
+    if (schedRecurrenceType === RecurrenceType.DAYS_OF_WEEK && schedDaysOfWeek.length === 0) {
+      setSchedError('Pick at least one day of the week');
       return;
     }
 
@@ -559,8 +576,20 @@ export default function ProjectWorkspace({ initialProjects, projectId, currentUs
       case RecurrenceType.DAILY:
         recurrencePayload = { recurrenceType: RecurrenceType.DAILY };
         break;
+      case RecurrenceType.EVERY_N_DAYS:
+        recurrencePayload = {
+          recurrenceType: RecurrenceType.EVERY_N_DAYS,
+          intervalDays: schedIntervalDays,
+        };
+        break;
       case RecurrenceType.WEEKLY:
         recurrencePayload = { recurrenceType: RecurrenceType.WEEKLY, dayOfWeek: schedDayOfWeek };
+        break;
+      case RecurrenceType.DAYS_OF_WEEK:
+        recurrencePayload = {
+          recurrenceType: RecurrenceType.DAYS_OF_WEEK,
+          daysOfWeek: schedDaysOfWeek,
+        };
         break;
       case RecurrenceType.EVERY_N_WEEKS:
         recurrencePayload = {
@@ -1497,12 +1526,62 @@ export default function ProjectWorkspace({ initialProjects, projectId, currentUs
             >
               <option value={RecurrenceType.NONE}>None</option>
               <option value={RecurrenceType.DAILY}>Daily</option>
+              <option value={RecurrenceType.EVERY_N_DAYS}>Every N days</option>
               <option value={RecurrenceType.WEEKLY}>Weekly</option>
+              <option value={RecurrenceType.DAYS_OF_WEEK}>Days of week</option>
               <option value={RecurrenceType.EVERY_N_WEEKS}>Every N weeks</option>
               <option value={RecurrenceType.MONTHLY}>Monthly</option>
               <option value={RecurrenceType.SPECIFIC_DATE}>Specific date</option>
             </select>
           </div>
+
+          {schedRecurrenceType === RecurrenceType.EVERY_N_DAYS && (
+            <div>
+              <label
+                htmlFor="sched-interval-days"
+                className="block text-sm font-medium text-zinc-300 mb-1.5"
+              >
+                Every N days
+              </label>
+              <input
+                id="sched-interval-days"
+                type="number"
+                min={1}
+                value={schedIntervalDays}
+                onChange={(e) => setSchedIntervalDays(Math.max(1, Number(e.target.value)))}
+                className="field"
+              />
+            </div>
+          )}
+
+          {schedRecurrenceType === RecurrenceType.DAYS_OF_WEEK && (
+            <div>
+              <label className="block text-sm font-medium text-zinc-300 mb-1.5">
+                Days of week <span className="text-zinc-500">(pick one or more)</span>
+              </label>
+              <div className="flex flex-wrap gap-2">
+                {WEEKDAY_OPTIONS.map((opt) => {
+                  const selected = schedDaysOfWeek.includes(opt.value);
+                  return (
+                    <button
+                      key={opt.value}
+                      type="button"
+                      onClick={() => toggleSchedDay(opt.value)}
+                      aria-pressed={selected}
+                      className={cn(
+                        'rounded-lg border px-3 py-1.5 text-sm font-medium transition-all',
+                        selected
+                          ? 'border-indigo-500/60 bg-indigo-950/40 text-indigo-200'
+                          : 'border-zinc-700 bg-zinc-800/50 text-zinc-400 hover:text-zinc-200',
+                      )}
+                    >
+                      {opt.label.slice(0, 3)}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          )}
 
           {schedRecurrenceType === RecurrenceType.WEEKLY && (
             <div>

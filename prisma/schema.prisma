@@ -15,6 +15,8 @@ enum RecurrenceType {
   EVERY_N_WEEKS
   MONTHLY
   SPECIFIC_DATE
+  EVERY_N_DAYS
+  DAYS_OF_WEEK
 }
 
 enum Difficulty {
@@ -190,6 +192,8 @@ model Project {
   recurrenceType  RecurrenceType @default(NONE)
   dayOfWeek       Int?
   intervalWeeks   Int?
+  intervalDays    Int?
+  daysOfWeek      Int[]          @default([])
   dayOfMonth      Int?
   specificDate    DateTime?
   dueDate         DateTime?

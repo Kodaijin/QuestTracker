@@ -58,6 +58,8 @@ export default function CalendarClient({ initialProjects }: Props) {
         recurrenceType: p.recurrenceType,
         dayOfWeek: p.dayOfWeek,
         intervalWeeks: p.intervalWeeks,
+        intervalDays: p.intervalDays,
+        daysOfWeek: p.daysOfWeek,
         dayOfMonth: p.dayOfMonth,
         specificDate: p.specificDate ? new Date(p.specificDate) : null,
       };

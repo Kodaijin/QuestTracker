@@ -199,6 +199,8 @@ const recurrenceSchema = z
     recurrenceType: z.nativeEnum(RecurrenceType).optional().default(RecurrenceType.NONE),
     dayOfWeek: z.number().int().min(0).max(6).nullable().optional(),
     intervalWeeks: z.number().int().min(1).nullable().optional(),
+    intervalDays: z.number().int().min(1).nullable().optional(),
+    daysOfWeek: z.array(z.number().int().min(0).max(6)).optional().default([]),
     dayOfMonth: z.number().int().min(1).max(31).nullable().optional(),
     specificDate: z.string().nullable().optional(), // ISO date string from client
   })
@@ -225,6 +227,24 @@ const recurrenceSchema = z
           code: z.ZodIssueCode.custom,
           message: 'intervalWeeks is required for EVERY_N_WEEKS recurrence',
           path: ['intervalWeeks'],
+        });
+      }
+    }
+    if (v.recurrenceType === RecurrenceType.EVERY_N_DAYS) {
+      if (v.intervalDays == null) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: 'intervalDays is required for EVERY_N_DAYS recurrence',
+          path: ['intervalDays'],
+        });
+      }
+    }
+    if (v.recurrenceType === RecurrenceType.DAYS_OF_WEEK) {
+      if (!v.daysOfWeek || v.daysOfWeek.length === 0) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: 'Pick at least one day for DAYS_OF_WEEK recurrence',
+          path: ['daysOfWeek'],
         });
       }
     }
@@ -255,6 +275,8 @@ function normaliseRecurrence(r: RecurrenceInput): {
   recurrenceType: RecurrenceType;
   dayOfWeek: number | null;
   intervalWeeks: number | null;
+  intervalDays: number | null;
+  daysOfWeek: number[];
   dayOfMonth: number | null;
   specificDate: Date | null;
   dueDate: Date | null;
@@ -273,6 +295,11 @@ function normaliseRecurrence(r: RecurrenceInput): {
     intervalWeeks: type === RecurrenceType.EVERY_N_WEEKS
       ? (r.intervalWeeks ?? null)
       : null,
+    intervalDays: type === RecurrenceType.EVERY_N_DAYS ? (r.intervalDays ?? null) : null,
+    daysOfWeek:
+      type === RecurrenceType.DAYS_OF_WEEK
+        ? Array.from(new Set(r.daysOfWeek ?? [])).sort((a, b) => a - b)
+        : [],
     dayOfMonth: type === RecurrenceType.MONTHLY ? (r.dayOfMonth ?? null) : null,
     specificDate: specificDateObj,
   };
@@ -552,6 +579,8 @@ export async function createProjectForUser(
       recurrenceType: recFields.recurrenceType,
       dayOfWeek: recFields.dayOfWeek,
       intervalWeeks: recFields.intervalWeeks,
+      intervalDays: recFields.intervalDays,
+      daysOfWeek: recFields.daysOfWeek,
       dayOfMonth: recFields.dayOfMonth,
       specificDate: recFields.specificDate,
       dueDate: recFields.dueDate,
@@ -1289,6 +1318,8 @@ export async function updateProject(
       recurrenceType: recFields.recurrenceType,
       dayOfWeek: recFields.dayOfWeek,
       intervalWeeks: recFields.intervalWeeks,
+      intervalDays: recFields.intervalDays,
+      daysOfWeek: recFields.daysOfWeek,
       dayOfMonth: recFields.dayOfMonth,
       specificDate: recFields.specificDate,
       dueDate: recFields.dueDate,
@@ -1594,6 +1625,8 @@ export async function syncRecurringQuests(): Promise<void> {
       recurrenceType: project.recurrenceType,
       dayOfWeek: project.dayOfWeek,
       intervalWeeks: project.intervalWeeks,
+      intervalDays: project.intervalDays,
+      daysOfWeek: project.daysOfWeek,
       dayOfMonth: project.dayOfMonth,
       specificDate: project.specificDate,
       dueDate: project.dueDate,
