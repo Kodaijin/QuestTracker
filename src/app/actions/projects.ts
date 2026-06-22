@@ -151,6 +151,16 @@ async function acceptedAllyIds(userId: string): Promise<Set<string>> {
   return new Set(connections.map((c) => (c.requesterId === userId ? c.addresseeId : c.requesterId)));
 }
 
+/** Next free sortOrder for a user's top-level quests (appended to the end). */
+async function nextProjectSortOrder(userId: string): Promise<number> {
+  const last = await prisma.project.findFirst({
+    where: { userId, parentId: null },
+    orderBy: { sortOrder: 'desc' },
+    select: { sortOrder: true },
+  });
+  return (last?.sortOrder ?? 0) + 1;
+}
+
 /**
  * Server-side mirror of `lockedSubQuestIds` for a single sub-quest: under a
  * `sequential` epic, a sub-quest is locked while any earlier sibling (by
@@ -330,6 +340,8 @@ const createProjectSchema = z
       .default([]),
     isEpic: z.boolean().optional().default(false),
     sequential: z.boolean().optional().default(false),
+    // Standalone/sub-quest: objectives must be checked off in order.
+    sequentialObjectives: z.boolean().optional().default(false),
     subQuests: z
       .array(z.string().trim().min(1))
       .optional()
@@ -395,6 +407,28 @@ const updateEpicSettingsSchema = z.object({
   sequential: z.boolean(),
 });
 
+const setSequentialObjectivesSchema = z.object({
+  projectId: z.string().min(1, 'projectId is required'),
+  sequential: z.boolean(),
+});
+
+const reorderObjectiveSchema = z.object({
+  objectiveId: z.string().min(1, 'objectiveId is required'),
+  direction: z.enum(['up', 'down']),
+});
+
+const reorderInventoryItemSchema = z.object({
+  itemId: z.string().min(1, 'itemId is required'),
+  direction: z.enum(['up', 'down']),
+});
+
+const reorderProjectsSchema = z.object({
+  // Top-level quest ids in their new on-board order. Only owned quests are moved;
+  // their existing sortOrder values are redistributed in this order, so quests
+  // outside this set (e.g. shared, completed, or upcoming) keep their positions.
+  orderedIds: z.array(z.string().min(1)).min(1),
+});
+
 const toggleObjectiveSchema = z.object({
   objectiveId: z.string().min(1, 'objectiveId is required'),
 });
@@ -451,6 +485,7 @@ export async function createProjectForUser(
     inventoryItems,
     isEpic,
     sequential,
+    sequentialObjectives,
     subQuests,
     memberIds,
     membersCanEdit,
@@ -460,6 +495,7 @@ export async function createProjectForUser(
   const cleanTags = Array.from(new Set(tags.map((t) => t.trim()).filter(Boolean)));
   const availableAtDate = availableAt ? new Date(availableAt) : null;
   const deadlineDate = deadline ? new Date(deadline) : null;
+  const sortOrder = await nextProjectSortOrder(userId);
 
   // Epic quests are non-recurring containers; their content is sub-quests, which
   // are created as child projects (each a full quest fleshed out later).
@@ -474,6 +510,7 @@ export async function createProjectForUser(
         userId,
         isEpic: true,
         sequential,
+        sortOrder,
         recurrenceType: RecurrenceType.NONE,
         children: {
           create: subQuests.map((subTitle, index) => ({
@@ -510,6 +547,8 @@ export async function createProjectForUser(
       deadline: deadlineDate,
       userId,
       membersCanEdit,
+      sequentialObjectives,
+      sortOrder,
       recurrenceType: recFields.recurrenceType,
       dayOfWeek: recFields.dayOfWeek,
       intervalWeeks: recFields.intervalWeeks,
@@ -524,7 +563,7 @@ export async function createProjectForUser(
         })),
       },
       inventoryItems: {
-        create: inventoryItems.map((name) => ({ name, gathered: false })),
+        create: inventoryItems.map((name, index) => ({ name, gathered: false, order: index + 1 })),
       },
       members: {
         create: validMemberIds.map((memberId) => ({
@@ -696,8 +735,16 @@ export async function createInventoryItem(
   // Owner, or a member when the owner allows member edits.
   await assertCanEditQuest(projectId, userId);
 
+  // Append to the end: next order is one past the current maximum.
+  const last = await prisma.inventoryItem.findFirst({
+    where: { projectId },
+    orderBy: { order: 'desc' },
+    select: { order: true },
+  });
+  const nextOrder = (last?.order ?? 0) + 1;
+
   return prisma.inventoryItem.create({
-    data: { projectId, name, gathered: false },
+    data: { projectId, name, gathered: false, order: nextOrder },
   });
 }
 
@@ -806,6 +853,138 @@ export async function updateEpicSettings(
   });
 }
 
+/** Toggle whether a quest's objectives must be checked off in order. */
+export async function setSequentialObjectives(
+  input: z.infer<typeof setSequentialObjectivesSchema>,
+): Promise<Project> {
+  const userId = await requireUserId();
+
+  const parsed = setSequentialObjectivesSchema.safeParse(input);
+  if (!parsed.success) {
+    throw new Error(parsed.error.issues[0]?.message ?? 'Invalid input');
+  }
+
+  const { projectId, sequential } = parsed.data;
+  await assertCanEditQuest(projectId, userId);
+
+  return prisma.project.update({
+    where: { id: projectId },
+    data: { sequentialObjectives: sequential },
+  });
+}
+
+/** Move an objective up or down by swapping its `order` with its neighbour. */
+export async function reorderObjective(
+  input: z.infer<typeof reorderObjectiveSchema>,
+): Promise<void> {
+  const userId = await requireUserId();
+
+  const parsed = reorderObjectiveSchema.safeParse(input);
+  if (!parsed.success) {
+    throw new Error(parsed.error.issues[0]?.message ?? 'Invalid input');
+  }
+
+  const { objectiveId, direction } = parsed.data;
+
+  const objective = await prisma.objective.findUnique({
+    where: { id: objectiveId },
+    select: { projectId: true },
+  });
+  if (!objective) throw new Error('Objective not found');
+  await assertCanEditQuest(objective.projectId, userId);
+
+  const siblings = await prisma.objective.findMany({
+    where: { projectId: objective.projectId },
+    orderBy: { order: 'asc' },
+    select: { id: true, order: true },
+  });
+
+  const idx = siblings.findIndex((s) => s.id === objectiveId);
+  const swapIdx = direction === 'up' ? idx - 1 : idx + 1;
+  if (idx === -1 || swapIdx < 0 || swapIdx >= siblings.length) return; // no-op at the ends
+
+  const a = siblings[idx];
+  const b = siblings[swapIdx];
+  await prisma.$transaction([
+    prisma.objective.update({ where: { id: a.id }, data: { order: b.order } }),
+    prisma.objective.update({ where: { id: b.id }, data: { order: a.order } }),
+  ]);
+}
+
+/** Move an inventory item up or down by swapping its `order` with its neighbour. */
+export async function reorderInventoryItem(
+  input: z.infer<typeof reorderInventoryItemSchema>,
+): Promise<void> {
+  const userId = await requireUserId();
+
+  const parsed = reorderInventoryItemSchema.safeParse(input);
+  if (!parsed.success) {
+    throw new Error(parsed.error.issues[0]?.message ?? 'Invalid input');
+  }
+
+  const { itemId, direction } = parsed.data;
+
+  const item = await prisma.inventoryItem.findUnique({
+    where: { id: itemId },
+    select: { projectId: true },
+  });
+  if (!item) throw new Error('Item not found');
+  await assertCanEditQuest(item.projectId, userId);
+
+  const siblings = await prisma.inventoryItem.findMany({
+    where: { projectId: item.projectId },
+    orderBy: { order: 'asc' },
+    select: { id: true, order: true },
+  });
+
+  const idx = siblings.findIndex((s) => s.id === itemId);
+  const swapIdx = direction === 'up' ? idx - 1 : idx + 1;
+  if (idx === -1 || swapIdx < 0 || swapIdx >= siblings.length) return; // no-op at the ends
+
+  const a = siblings[idx];
+  const b = siblings[swapIdx];
+  await prisma.$transaction([
+    prisma.inventoryItem.update({ where: { id: a.id }, data: { order: b.order } }),
+    prisma.inventoryItem.update({ where: { id: b.id }, data: { order: a.order } }),
+  ]);
+}
+
+/**
+ * Reorder top-level quests on the dashboard. `orderedIds` is the desired order of
+ * a set of the user's owned quests (e.g. the active board). Their current
+ * sortOrder values are redistributed in that order, so quests outside the set
+ * keep their relative positions.
+ */
+export async function reorderProjects(
+  input: z.infer<typeof reorderProjectsSchema>,
+): Promise<void> {
+  const userId = await requireUserId();
+
+  const parsed = reorderProjectsSchema.safeParse(input);
+  if (!parsed.success) {
+    throw new Error(parsed.error.issues[0]?.message ?? 'Invalid input');
+  }
+
+  const { orderedIds } = parsed.data;
+
+  // Only move quests the caller actually owns; ignore anything else.
+  const owned = await prisma.project.findMany({
+    where: { id: { in: orderedIds }, userId, parentId: null },
+    select: { id: true, sortOrder: true },
+  });
+  const ownedIds = new Set(owned.map((p) => p.id));
+  const ownedOrdered = orderedIds.filter((id) => ownedIds.has(id));
+  if (ownedOrdered.length < 2) return; // nothing meaningful to reorder
+
+  // Reuse the existing sortOrder values, redistributed in the new order.
+  const slots = owned.map((p) => p.sortOrder).sort((x, y) => x - y);
+  await prisma.$transaction(
+    ownedOrdered.map((id, i) =>
+      prisma.project.update({ where: { id }, data: { sortOrder: slots[i] } }),
+    ),
+  );
+}
+
 export async function toggleObjective(
   input: z.infer<typeof toggleObjectiveSchema>,
 ): Promise<Objective> {
@@ -828,6 +1007,7 @@ export async function toggleObjective(
           title: true,
           parentId: true,
           difficulty: true,
+          sequentialObjectives: true,
         },
       },
     },
@@ -848,6 +1028,25 @@ export async function toggleObjective(
   }
 
   const projectId = objective.project.id;
+
+  // In-order guard: when objectives are sequential, you may only check the next
+  // one (all earlier ones done) and only un-check the last completed one (no
+  // later one still done). Mirrors lockedObjectiveIds in src/lib/quest.ts.
+  if (objective.project.sequentialObjectives) {
+    const ordered = await prisma.objective.findMany({
+      where: { projectId },
+      orderBy: { order: 'asc' },
+      select: { id: true, isCompleted: true },
+    });
+    const idx = ordered.findIndex((o) => o.id === objectiveId);
+    if (!objective.isCompleted) {
+      if (ordered.slice(0, idx).some((o) => !o.isCompleted)) {
+        throw new Error('Complete the earlier objectives first');
+      }
+    } else if (ordered.slice(idx + 1).some((o) => o.isCompleted)) {
+      throw new Error('Un-complete the later objectives first');
+    }
+  }
   const updated = await prisma.objective.update({
     where: { id: objectiveId },
     data: { isCompleted: !objective.isCompleted },
@@ -1292,7 +1491,7 @@ export async function getProjectsForUser(): Promise<ProjectWithRelations[]> {
     },
     include: {
       objectives: { orderBy: { order: 'asc' } },
-      inventoryItems: true,
+      inventoryItems: { orderBy: { order: 'asc' } },
       members: { include: { user: { select: { id: true, username: true, name: true } } } },
     },
   });

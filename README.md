@@ -23,8 +23,10 @@ Built with Next.js (App Router), Prisma, PostgreSQL, and NextAuth, and fully con
 
 - **Quests**: projects with a title, description, and custom icon, created with their objectives (and optional inventory) up front
 - **Epic Quests**: quests whose "objectives" are full sub-quests (each with its own objectives, inventory, and page), optionally enforced in order so later sub-quests stay locked (🔒) until earlier ones are complete
-- **Objectives**: ordered, checkable sub-tasks that drive each quest's completion progress. Every quest needs at least one
-- **Inventory**: a checklist of named items a quest needs. Check each off as you gather it
+- **Objectives**: ordered, checkable sub-tasks that drive each quest's completion progress. Every quest needs at least one. Reorder them with ↑/↓, and optionally enforce **in-order completion** so later objectives stay locked (🔒) until earlier ones are done
+- **Inventory**: a checklist of named items a quest needs. Check each off as you gather it, and reorder items with ↑/↓
+- **Reorder your board**: drag-free ↑/↓ controls on each active quest card let you arrange the dashboard in whatever order you like
+- **Export & import**: back up all your quests to a JSON file from Settings, and import a file to add them to your board (objectives, inventory, epics, recurrence, and completion state all round-trip)
 - **XP & leveling**: every objective, gathered item, and completed quest awards XP, and un-checking claws it back. XP drives your level along a quadratic curve and an evolving rank title (Novice → Squire → Knight → Champion → Hero → Legend), with a level-up celebration
 - **Difficulty & rarity**: tag a quest Trivial → Legendary. Harder quests award more XP and glow brighter on the board
 - **Daily streaks**: keep a flame going by completing something each day. Tracks your current and longest streak with at-risk warnings
@@ -244,9 +246,9 @@ quest-creation logic (`createProjectForUser`) as the web UI.
 ## Data model
 
 - **User**: owns many projects, completion events, and unlocked achievements. Stores credentials, a unique `username` (used for party invites), an optional security question, and an optional `discordUsername` (a handle or numeric ID for the Discord integration)
-- **Project (Quest)**: title, description, icon, `difficulty`, `tags`, recurrence settings, and due/completion dates. An Epic is a Project with `isEpic`; its sub-quests are Projects pointing back via `parentId` (with `epicOrder` for sequencing and a `sequential` flag on the Epic)
-- **Objective**: ordered, completable sub-tasks belonging to a quest
-- **InventoryItem**: named items belonging to a quest, each with a `gathered` checkbox state
+- **Project (Quest)**: title, description, icon, `difficulty`, `tags`, recurrence settings, and due/completion dates. A `sortOrder` sets its place on the dashboard, and `sequentialObjectives` enforces in-order objective completion. An Epic is a Project with `isEpic`; its sub-quests are Projects pointing back via `parentId` (with `epicOrder` for sequencing and a `sequential` flag on the Epic)
+- **Objective**: ordered (by `order`), completable sub-tasks belonging to a quest
+- **InventoryItem**: named items belonging to a quest, each with a `gathered` checkbox state and an `order` for manual sequencing
 - **CompletionEvent**: an append-only log of every objective/item/quest completion (with awarded XP and timestamp). The source of truth for XP, levels, streaks, and insights
 - **UnlockedAchievement**: records which achievement a user earned and when (unique per user + achievement key)
 - **Connection**: a hero-to-hero ally link between a requester and addressee, with a pending/accepted/declined status (one per pair)
@@ -259,6 +261,12 @@ quest-creation logic (`createProjectForUser`) as the web UI.
 - **CosmeticUnlock**: a cosmetic the user bought with gems (ownership only). The gem balance is derived as `earned − sum(owned prices)`, never stored as a counter. Equipped selections live on `User` (`themeId`/`xpBarId`/`frameId`/`particleId`/`backgroundId`), and the catalog and economy are code-defined in `src/lib/cosmetics.ts`. Free cosmetics (such as the default backgrounds) can be equipped without a purchase, and the per-user `cosmeticsFree` flag unlocks everything for users who opt out of the gem economy
 
 ## Changelog
+
+### 2026-06-21: In-order objectives, reordering, and JSON export/import
+
+- **In-order objectives**: a per-quest "Must be done in order" toggle (`Project.sequentialObjectives`) locks later objectives (🔒) until earlier ones are checked off — the objective-level analogue of an Epic's `sequential` sub-quests. Set it when creating a quest or from the quest's Objectives card. Enforced both in the UI and server-side in `toggleObjective` (mirrored by `lockedObjectiveIds` in `src/lib/quest.ts`)
+- **Reordering**: objectives, inventory items, and quests can all be rearranged with ↑/↓ controls. Inventory gains an `order` column and quests a `sortOrder` (backfilled by age); new `reorderObjective`, `reorderInventoryItem`, and `reorderProjects` server actions. The dashboard's active board now follows your manual order instead of listing recurring quests first
+- **Export & import**: a Settings card to download all your quests as JSON and import a file back. New `exportQuests` / `importQuests` actions in `src/app/actions/data.ts`. The snapshot carries no ids, XP, or party data, so importing never mints XP (XP stays derived from the CompletionEvent log); completion state round-trips and recurrence due-dates are recomputed on import
 
 ### 2026-06-20: Rich Discord embeds, a quest bot, and party progress notices
 

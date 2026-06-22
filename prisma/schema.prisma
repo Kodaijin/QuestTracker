@@ -201,6 +201,13 @@ model Project {
   tags            String[]       @default([])
   isEpic          Boolean        @default(false)
   sequential      Boolean        @default(false)
+  // For standalone/sub-quests: whether objectives must be checked off in order
+  // (later objectives stay locked 🔒 until earlier ones are complete). The epic-
+  // level analogue for sub-quests is `sequential`.
+  sequentialObjectives Boolean   @default(false)
+  // Manual ordering for the dashboard board (lower = earlier). Only meaningful for
+  // top-level quests; sub-quests order within their epic via `epicOrder`.
+  sortOrder       Int            @default(0)
   // For shared (party) quests: whether accepted members may edit the quest
   // (add/edit objectives & inventory, change settings). Deleting stays owner-only.
   membersCanEdit  Boolean        @default(true)
@@ -232,6 +239,7 @@ model InventoryItem {
   id        String  @id @default(cuid())
   name      String
   gathered  Boolean @default(false)
+  order     Int     @default(0)
   projectId String
   project   Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
 

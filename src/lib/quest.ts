@@ -87,6 +87,33 @@ export function lockedSubQuestIds(
 }
 
 /**
+ * For a quest with `sequentialObjectives`, returns the set of objective ids whose
+ * checkbox should be disabled. Objectives are walked in `order`; a valid state is
+ * a run of completed ones followed by incomplete ones, so only the boundary is
+ * actionable: the first incomplete objective (to check next) and the last
+ * completed one (to step back). Everything else is locked. Returns an empty set
+ * when sequencing is off.
+ */
+export function lockedObjectiveIds(project: ProjectWithRelations): Set<string> {
+  const locked = new Set<string>();
+  if (!project.sequentialObjectives) return locked;
+
+  const ordered = [...project.objectives].sort((a, b) => a.order - b.order);
+  const firstIncomplete = ordered.findIndex((o) => !o.isCompleted);
+
+  ordered.forEach((o, i) => {
+    if (firstIncomplete === -1) {
+      // All complete: only the final objective may be un-checked.
+      if (i !== ordered.length - 1) locked.add(o.id);
+    } else if (i !== firstIncomplete && i !== firstIncomplete - 1) {
+      // Otherwise only the next-to-check and the last-completed are actionable.
+      locked.add(o.id);
+    }
+  });
+  return locked;
+}
+
+/**
  * Whether a single sub-quest is currently locked. Convenience wrapper around
  * {@link lockedSubQuestIds} for the sub-quest workspace, which only has the
  * child + the full list.

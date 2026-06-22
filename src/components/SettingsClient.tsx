@@ -10,6 +10,7 @@ import NotificationBell from '@/components/NotificationBell';
 import ShopNavLink from '@/components/ShopNavLink';
 import BackgroundPicker from '@/components/BackgroundPicker';
 import CosmeticsModeToggle from '@/components/CosmeticsModeToggle';
+import DataExportImport from '@/components/DataExportImport';
 import {
   changeEmail,
   changeUsername,
@@ -450,6 +451,9 @@ export default function SettingsClient({
 
         {/* ── Background ────────────────────────────────────────────────────── */}
         <BackgroundPicker />
+
+        {/* ── Export & import ───────────────────────────────────────────────── */}
+        <DataExportImport />
 
         {/* ── Change email ──────────────────────────────────────────────────── */}
         <Card>

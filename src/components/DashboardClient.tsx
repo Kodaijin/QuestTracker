@@ -5,7 +5,7 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import { RecurrenceType, Difficulty } from '@prisma/client';
 import { useProjectStore } from '@/store/useProjectStore';
-import { createProject, deleteProject } from '@/app/actions/projects';
+import { createProject, deleteProject, reorderProjects } from '@/app/actions/projects';
 import type { ProjectWithRelations } from '@/app/actions/projects';
 import type { Ally } from '@/app/actions/party';
 import { recurrenceLabel, isMissed } from '@/lib/recurrence';
@@ -74,6 +74,7 @@ export default function DashboardClient({
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
   const [objectives, setObjectives] = useState<string[]>(['']);
+  const [sequentialObjectives, setSequentialObjectives] = useState(false);
   const [items, setItems] = useState<string[]>([]);
   const [icon, setIcon] = useState<string | null>(null);
   const [difficulty, setDifficulty] = useState<Difficulty>(Difficulty.NORMAL);
@@ -84,6 +85,7 @@ export default function DashboardClient({
   const [deadline, setDeadline] = useState<string>('');
   const [error, setError] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
+  const [isReordering, startReorder] = useTransition();
   const [showCompleted, setShowCompleted] = useState(false);
   const [showUpcoming, setShowUpcoming] = useState(true);
 
@@ -157,21 +159,19 @@ export default function DashboardClient({
   const upcomingProjects = notCompleted
     .filter((p) => isUpcoming(p.availableAt, now))
     .sort((a, b) => new Date(a.availableAt!).getTime() - new Date(b.availableAt!).getTime());
-  // Recurring quests are listed first among active ones (stable sort preserves
-  // the original order within each group).
+  // Active quests follow the user's manual board order (see reorderProjects).
   const activeProjects = notCompleted
     .filter((p) => !isUpcoming(p.availableAt, now))
-    .sort((a, b) => {
-      const aRecurring = a.recurrenceType !== RecurrenceType.NONE ? 0 : 1;
-      const bRecurring = b.recurrenceType !== RecurrenceType.NONE ? 0 : 1;
-      return aRecurring - bRecurring;
-    });
-  const completedProjects = visible.filter((p) => getQuestStatus(p, projects) === 'completed');
+    .sort((a, b) => a.sortOrder - b.sortOrder);
+  const completedProjects = visible
+    .filter((p) => getQuestStatus(p, projects) === 'completed')
+    .sort((a, b) => a.sortOrder - b.sortOrder);
 
   function resetForm() {
     setTitle('');
     setDescription('');
     setObjectives(['']);
+    setSequentialObjectives(false);
     setItems([]);
     setIcon(null);
     setDifficulty(Difficulty.NORMAL);
@@ -248,6 +248,7 @@ export default function DashboardClient({
           title: trimmedTitle,
           description: description.trim() || undefined,
           objectives: trimmedObjectives,
+          sequentialObjectives,
           inventoryItems: items.map((i) => i.trim()).filter(Boolean),
           icon: icon ?? undefined,
           difficulty,
@@ -372,7 +373,31 @@ export default function DashboardClient({
     }
   }
 
-  function renderQuestCard(project: ProjectWithRelations, index = 0, upcoming = false) {
+  // Manual board reordering: swap an active quest with its neighbour and persist
+  // the whole active order. Disabled while filters are narrowing the board.
+  function moveActiveQuest(index: number, direction: 'up' | 'down') {
+    const swapIdx = direction === 'up' ? index - 1 : index + 1;
+    if (swapIdx < 0 || swapIdx >= activeProjects.length) return;
+    const next = [...activeProjects];
+    [next[index], next[swapIdx]] = [next[swapIdx], next[index]];
+    const orderedIds = next.map((p) => p.id);
+    startReorder(async () => {
+      try {
+        await reorderProjects({ orderedIds });
+        router.refresh();
+      } catch {
+        /* best-effort reorder; refresh will resync on next load */
+      }
+    });
+  }
+
+  function renderQuestCard(
+    project: ProjectWithRelations,
+    index = 0,
+    upcoming = false,
+    reorderable = false,
+    listLength = 0,
+  ) {
     const { done, total } = questProgress(project, projects);
     const pct = total > 0 ? Math.round((done / total) * 100) : 0;
     const status = getQuestStatus(project, projects);
@@ -506,16 +531,47 @@ export default function DashboardClient({
           </Card>
         </Link>
         {project.userId === currentUserId && (
-          <button
-            onClick={(e) => {
-              e.stopPropagation();
-              void handleDeleteProject(project.id, project.title);
-            }}
-            aria-label={`Delete "${project.title}"`}
-            className="absolute top-3 right-3 opacity-0 group-hover:opacity-100 transition-opacity text-zinc-500 hover:text-red-400 text-sm px-1 z-10"
-          >
-            ✕
-          </button>
+          <div className="absolute top-3 right-3 flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity z-10">
+            {reorderable && (
+              <>
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    e.preventDefault();
+                    moveActiveQuest(index, 'up');
+                  }}
+                  disabled={index === 0 || isReordering}
+                  aria-label={`Move "${project.title}" earlier`}
+                  className="text-zinc-500 hover:text-indigo-400 disabled:opacity-30 disabled:hover:text-zinc-500 transition-colors text-sm px-1"
+                >
+                  ↑
+                </button>
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    e.preventDefault();
+                    moveActiveQuest(index, 'down');
+                  }}
+                  disabled={index === listLength - 1 || isReordering}
+                  aria-label={`Move "${project.title}" later`}
+                  className="text-zinc-500 hover:text-indigo-400 disabled:opacity-30 disabled:hover:text-zinc-500 transition-colors text-sm px-1"
+                >
+                  ↓
+                </button>
+              </>
+            )}
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                e.preventDefault();
+                void handleDeleteProject(project.id, project.title);
+              }}
+              aria-label={`Delete "${project.title}"`}
+              className="text-zinc-500 hover:text-red-400 text-sm px-1"
+            >
+              ✕
+            </button>
+          </div>
         )}
       </div>
     );
@@ -755,6 +811,18 @@ export default function DashboardClient({
                 >
                   + Add objective
                 </Button>
+                <label className="flex items-center gap-2.5 mt-3 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={sequentialObjectives}
+                    onChange={(e) => setSequentialObjectives(e.target.checked)}
+                    className="h-4 w-4 accent-amber-500"
+                  />
+                  <span className="text-sm text-zinc-200">
+                    Must be done in order
+                    <span className="text-zinc-500"> — later objectives stay locked 🔒 until earlier ones are complete</span>
+                  </span>
+                </label>
               </div>
 
               {/* Inventory items (optional) */}
@@ -1203,7 +1271,9 @@ export default function DashboardClient({
             <p className="text-sm text-zinc-500">No active quests.</p>
           ) : (
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
-              {activeProjects.map((project, i) => renderQuestCard(project, i))}
+              {activeProjects.map((project, i) =>
+                renderQuestCard(project, i, false, !filtersActive, activeProjects.length),
+              )}
             </div>
           )}
 

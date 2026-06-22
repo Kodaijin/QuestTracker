@@ -18,6 +18,9 @@ import {
   deleteInventoryItem,
   createSubQuest,
   reorderSubQuest,
+  reorderObjective,
+  reorderInventoryItem,
+  setSequentialObjectives,
   updateEpicSettings,
   setDifficulty,
   setTags,
@@ -34,6 +37,7 @@ import {
   getQuestStatus,
   lockedSubQuestIds,
   isSubQuestLocked,
+  lockedObjectiveIds,
 } from '@/lib/quest';
 import { difficultyMeta, DIFFICULTIES } from '@/lib/difficulty';
 import { Checkbox } from '@/components/ui/checkbox';
@@ -146,6 +150,9 @@ export default function ProjectWorkspace({ initialProjects, projectId, currentUs
   const [isSavingTags, startSaveTags] = useTransition();
   const [isSavingTiming, startSaveTiming] = useTransition();
   const [isSavingPerms, startSavePerms] = useTransition();
+  const [isMutatingObj, startMutateObj] = useTransition();
+  const [isMutatingItem, startMutateItem] = useTransition();
+  const [isSavingSeqObj, startSaveSeqObj] = useTransition();
 
   // ── Sub-quest (epic) management state ───────────────────────────────────────────
   const [newSubQuestTitle, setNewSubQuestTitle] = useState('');
@@ -192,6 +199,8 @@ export default function ProjectWorkspace({ initialProjects, projectId, currentUs
   const locked = isSubQuest ? isSubQuestLocked(project, allProjects) : false;
   const children = isEpic ? getChildren(project, allProjects) : [];
   const lockedIds = isEpic ? lockedSubQuestIds(project, allProjects) : new Set<string>();
+  // Objectives locked behind earlier ones when this quest enforces in-order completion.
+  const objLocked = lockedObjectiveIds(project);
 
   const { done, total } = questProgress(project, allProjects);
   const pct = total > 0 ? Math.round((done / total) * 100) : 0;
@@ -222,6 +231,7 @@ export default function ProjectWorkspace({ initialProjects, projectId, currentUs
 
   async function handleToggle(objectiveId: string) {
     if (locked) return; // sub-quest locked behind earlier siblings
+    if (objLocked.has(objectiveId)) return; // out-of-order under sequential objectives
     const prev = optimisticToggle(objectiveId);
 
     // Only celebrate when an objective transitions into completion.
@@ -585,6 +595,39 @@ export default function ProjectWorkspace({ initialProjects, projectId, currentUs
         router.refresh();
       } catch (err) {
         setSubQuestError(err instanceof Error ? err.message : 'Failed to update setting');
+      }
+    });
+  }
+
+  function handleToggleSequentialObjectives(next: boolean) {
+    startSaveSeqObj(async () => {
+      try {
+        await setSequentialObjectives({ projectId, sequential: next });
+        router.refresh();
+      } catch {
+        /* best-effort; refresh will resync */
+      }
+    });
+  }
+
+  function handleReorderObjective(objectiveId: string, direction: 'up' | 'down') {
+    startMutateObj(async () => {
+      try {
+        await reorderObjective({ objectiveId, direction });
+        router.refresh();
+      } catch {
+        /* best-effort reorder; refresh will resync on next load */
+      }
+    });
+  }
+
+  function handleReorderItem(itemId: string, direction: 'up' | 'down') {
+    startMutateItem(async () => {
+      try {
+        await reorderInventoryItem({ itemId, direction });
+        router.refresh();
+      } catch {
+        /* best-effort reorder; refresh will resync on next load */
       }
     });
   }
@@ -1036,12 +1079,27 @@ export default function ProjectWorkspace({ initialProjects, projectId, currentUs
           <CardTitle>Objectives</CardTitle>
         </CardHeader>
         <CardContent>
+          {canEdit && (
+            <label className="flex items-center gap-2.5 mb-4 cursor-pointer">
+              <Checkbox
+                checked={project.sequentialObjectives}
+                onCheckedChange={(c) => handleToggleSequentialObjectives(c === true)}
+                disabled={isSavingSeqObj}
+                aria-label="Objectives must be done in order"
+              />
+              <span className="text-sm text-zinc-300">
+                Must be done in order
+                <span className="text-zinc-500"> — later objectives lock 🔒 until earlier ones finish</span>
+              </span>
+            </label>
+          )}
           {project.objectives.length === 0 ? (
             <p className="text-sm text-zinc-500">No objectives yet.</p>
           ) : (
             <ul className="space-y-1">
-              {project.objectives.map((obj) => {
+              {project.objectives.map((obj, idx) => {
                 const isCelebrating = celebrate?.objId === obj.id;
+                const objIsLocked = objLocked.has(obj.id);
                 return (
                 <li
                   key={obj.id}
@@ -1080,7 +1138,7 @@ export default function ProjectWorkspace({ initialProjects, projectId, currentUs
                         <Checkbox
                           checked={obj.isCompleted}
                           onCheckedChange={() => handleToggle(obj.id)}
-                          disabled={locked}
+                          disabled={locked || objIsLocked}
                           className={cn(isCelebrating && 'animate-check-pop')}
                         />
                         {isCelebrating && <SparkleBurst key={celebrate.nonce} />}
@@ -1090,13 +1148,32 @@ export default function ProjectWorkspace({ initialProjects, projectId, currentUs
                           'text-sm flex-1 transition-colors',
                           obj.isCompleted
                             ? 'text-zinc-500 line-through'
-                            : 'text-zinc-200',
+                            : objIsLocked
+                              ? 'text-zinc-500'
+                              : 'text-zinc-200',
                         )}
                       >
+                        {objIsLocked && <span aria-hidden className="mr-1">🔒</span>}
                         {obj.title}
                       </span>
                       {canEdit && (
-                        <div className="opacity-0 group-hover:opacity-100 transition-opacity flex items-center gap-1">
+                        <div className="opacity-0 group-hover:opacity-100 transition-opacity flex items-center gap-0.5">
+                          <button
+                            onClick={() => handleReorderObjective(obj.id, 'up')}
+                            disabled={idx === 0 || isMutatingObj}
+                            aria-label={`Move "${obj.title}" up`}
+                            className="text-zinc-500 hover:text-indigo-400 disabled:opacity-30 disabled:hover:text-zinc-500 transition-colors px-1 text-sm"
+                          >
+                            ↑
+                          </button>
+                          <button
+                            onClick={() => handleReorderObjective(obj.id, 'down')}
+                            disabled={idx === project.objectives.length - 1 || isMutatingObj}
+                            aria-label={`Move "${obj.title}" down`}
+                            className="text-zinc-500 hover:text-indigo-400 disabled:opacity-30 disabled:hover:text-zinc-500 transition-colors px-1 text-sm"
+                          >
+                            ↓
+                          </button>
                           <button
                             onClick={() => beginEditObj(obj.id, obj.title)}
                             aria-label={`Rename "${obj.title}"`}
@@ -1306,7 +1383,7 @@ export default function ProjectWorkspace({ initialProjects, projectId, currentUs
             <p className="text-sm text-zinc-500">No inventory items yet.</p>
           ) : (
             <ul className="divide-y divide-zinc-800/70">
-              {project.inventoryItems.map((item) => (
+              {project.inventoryItems.map((item, idx) => (
                 <li
                   key={item.id}
                   className="flex items-center gap-2 py-3 first:pt-0 last:pb-0 group"
@@ -1353,7 +1430,23 @@ export default function ProjectWorkspace({ initialProjects, projectId, currentUs
                         {item.name}
                       </span>
                       {canEdit && (
-                        <div className="opacity-0 group-hover:opacity-100 transition-opacity flex items-center gap-1 shrink-0">
+                        <div className="opacity-0 group-hover:opacity-100 transition-opacity flex items-center gap-0.5 shrink-0">
+                          <button
+                            onClick={() => handleReorderItem(item.id, 'up')}
+                            disabled={idx === 0 || isMutatingItem}
+                            aria-label={`Move "${item.name}" up`}
+                            className="text-zinc-500 hover:text-indigo-400 disabled:opacity-30 disabled:hover:text-zinc-500 transition-colors px-1 text-sm"
+                          >
+                            ↑
+                          </button>
+                          <button
+                            onClick={() => handleReorderItem(item.id, 'down')}
+                            disabled={idx === project.inventoryItems.length - 1 || isMutatingItem}
+                            aria-label={`Move "${item.name}" down`}
+                            className="text-zinc-500 hover:text-indigo-400 disabled:opacity-30 disabled:hover:text-zinc-500 transition-colors px-1 text-sm"
+                          >
+                            ↓
+                          </button>
                           <button
                             onClick={() => beginEditItem(item.id, item.name)}
                             aria-label={`Rename "${item.name}"`}
