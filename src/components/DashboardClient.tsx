@@ -4,6 +4,23 @@ import { useEffect, useState, useTransition } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import { RecurrenceType, Difficulty } from '@prisma/client';
+import {
+  DndContext,
+  closestCenter,
+  PointerSensor,
+  KeyboardSensor,
+  useSensor,
+  useSensors,
+  type DragEndEvent,
+} from '@dnd-kit/core';
+import {
+  SortableContext,
+  useSortable,
+  arrayMove,
+  rectSortingStrategy,
+  sortableKeyboardCoordinates,
+} from '@dnd-kit/sortable';
+import { CSS } from '@dnd-kit/utilities';
 import { useProjectStore } from '@/store/useProjectStore';
 import { createProject, deleteProject, reorderProjects } from '@/app/actions/projects';
 import type { ProjectWithRelations } from '@/app/actions/projects';
@@ -56,6 +73,41 @@ const WEEKDAY_OPTIONS = [
   { label: 'Friday', value: 5 },
   { label: 'Saturday', value: 6 },
 ];
+
+// Drag-and-drop bag handed to a quest card so it can wire up the sortable wrapper
+// and a grip handle. `style` carries the live drag transform.
+type SortableBag = Pick<
+  ReturnType<typeof useSortable>,
+  'setNodeRef' | 'setActivatorNodeRef' | 'attributes' | 'listeners' | 'isDragging'
+> & { style: React.CSSProperties };
+
+/** Registers a card as a sortable item and exposes the sortable bag via render-prop. */
+function SortableQuestCard({
+  id,
+  children,
+}: {
+  id: string;
+  children: (bag: SortableBag) => React.ReactNode;
+}) {
+  const {
+    setNodeRef,
+    setActivatorNodeRef,
+    transform,
+    transition,
+    attributes,
+    listeners,
+    isDragging,
+  } = useSortable({ id });
+  const style: React.CSSProperties = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+  };
+  return (
+    <>
+      {children({ setNodeRef, setActivatorNodeRef, style, attributes, listeners, isDragging })}
+    </>
+  );
+}
 
 export default function DashboardClient({
   initialProjects,
@@ -373,13 +425,9 @@ export default function DashboardClient({
     }
   }
 
-  // Manual board reordering: swap an active quest with its neighbour and persist
-  // the whole active order. Disabled while filters are narrowing the board.
-  function moveActiveQuest(index: number, direction: 'up' | 'down') {
-    const swapIdx = direction === 'up' ? index - 1 : index + 1;
-    if (swapIdx < 0 || swapIdx >= activeProjects.length) return;
-    const next = [...activeProjects];
-    [next[index], next[swapIdx]] = [next[swapIdx], next[index]];
+  // Manual board reordering: persist a new active-quest order (used by both the
+  // ↑/↓ arrows and drag-and-drop). Disabled while filters are narrowing the board.
+  function persistActiveOrder(next: ProjectWithRelations[]) {
     const orderedIds = next.map((p) => p.id);
     startReorder(async () => {
       try {
@@ -391,12 +439,36 @@ export default function DashboardClient({
     });
   }
 
+  function moveActiveQuest(index: number, direction: 'up' | 'down') {
+    const swapIdx = direction === 'up' ? index - 1 : index + 1;
+    if (swapIdx < 0 || swapIdx >= activeProjects.length) return;
+    const next = [...activeProjects];
+    [next[index], next[swapIdx]] = [next[swapIdx], next[index]];
+    persistActiveOrder(next);
+  }
+
+  // Drag-and-drop: touch-friendly reordering via a grip handle on each card.
+  const dndSensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 4 } }),
+    useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
+  );
+
+  function handleDragEnd(event: DragEndEvent) {
+    const { active, over } = event;
+    if (!over || active.id === over.id) return;
+    const oldIndex = activeProjects.findIndex((p) => p.id === active.id);
+    const newIndex = activeProjects.findIndex((p) => p.id === over.id);
+    if (oldIndex === -1 || newIndex === -1) return;
+    persistActiveOrder(arrayMove(activeProjects, oldIndex, newIndex));
+  }
+
   function renderQuestCard(
     project: ProjectWithRelations,
     index = 0,
     upcoming = false,
     reorderable = false,
     listLength = 0,
+    sortable?: SortableBag,
   ) {
     const { done, total } = questProgress(project, projects);
     const pct = total > 0 ? Math.round((done / total) * 100) : 0;
@@ -429,8 +501,15 @@ export default function DashboardClient({
     return (
       <div
         key={project.id}
-        className={cn('animate-card-enter relative group', upcoming && 'opacity-70')}
-        style={{ animationDelay: `${Math.min(index, 12) * 60}ms` }}
+        ref={sortable?.setNodeRef}
+        className={cn(
+          'animate-card-enter relative group',
+          upcoming && 'opacity-70',
+          sortable?.isDragging && 'z-20 opacity-80',
+        )}
+        style={
+          sortable ? sortable.style : { animationDelay: `${Math.min(index, 12) * 60}ms` }
+        }
       >
         <Link
           href={`/projects/${project.id}`}
@@ -532,6 +611,22 @@ export default function DashboardClient({
         </Link>
         {project.userId === currentUserId && (
           <div className="absolute top-3 right-3 flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity z-10">
+            {reorderable && sortable && (
+              <button
+                type="button"
+                ref={sortable.setActivatorNodeRef}
+                {...sortable.attributes}
+                {...sortable.listeners}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  e.preventDefault();
+                }}
+                aria-label={`Drag "${project.title}" to reorder`}
+                className="cursor-grab active:cursor-grabbing touch-none text-zinc-500 hover:text-indigo-400 transition-colors text-sm px-1"
+              >
+                ⠿
+              </button>
+            )}
             {reorderable && (
               <>
                 <button
@@ -1270,11 +1365,34 @@ export default function DashboardClient({
           {activeProjects.length === 0 && completedProjects.length > 0 ? (
             <p className="text-sm text-zinc-500">No active quests.</p>
           ) : (
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
-              {activeProjects.map((project, i) =>
-                renderQuestCard(project, i, false, !filtersActive, activeProjects.length),
-              )}
-            </div>
+            filtersActive ? (
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
+                {activeProjects.map((project, i) =>
+                  renderQuestCard(project, i, false, false, activeProjects.length),
+                )}
+              </div>
+            ) : (
+              <DndContext
+                sensors={dndSensors}
+                collisionDetection={closestCenter}
+                onDragEnd={handleDragEnd}
+              >
+                <SortableContext
+                  items={activeProjects.map((p) => p.id)}
+                  strategy={rectSortingStrategy}
+                >
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
+                    {activeProjects.map((project, i) => (
+                      <SortableQuestCard key={project.id} id={project.id}>
+                        {(bag) =>
+                          renderQuestCard(project, i, false, true, activeProjects.length, bag)
+                        }
+                      </SortableQuestCard>
+                    ))}
+                  </div>
+                </SortableContext>
+              </DndContext>
+            )
           )}
 
           {/* Upcoming quests section */}

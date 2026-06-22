@@ -1074,25 +1074,26 @@ export default function ProjectWorkspace({ initialProjects, projectId, currentUs
 
       {/* Objectives */}
       {!isEpic && (
-      <Card>
-        <CardHeader>
-          <CardTitle>Objectives</CardTitle>
-        </CardHeader>
-        <CardContent>
-          {canEdit && (
-            <label className="flex items-center gap-2.5 mb-4 cursor-pointer">
-              <Checkbox
-                checked={project.sequentialObjectives}
-                onCheckedChange={(c) => handleToggleSequentialObjectives(c === true)}
-                disabled={isSavingSeqObj}
-                aria-label="Objectives must be done in order"
-              />
-              <span className="text-sm text-zinc-300">
-                Must be done in order
-                <span className="text-zinc-500"> — later objectives lock 🔒 until earlier ones finish</span>
-              </span>
-            </label>
-          )}
+      <div className="space-y-3">
+        {canEdit && (
+          <label className="flex items-center gap-2.5 cursor-pointer px-1">
+            <Checkbox
+              checked={project.sequentialObjectives}
+              onCheckedChange={(c) => handleToggleSequentialObjectives(c === true)}
+              disabled={isSavingSeqObj}
+              aria-label="Objectives must be done in order"
+            />
+            <span className="text-sm text-zinc-300">
+              Must be done in order
+              <span className="text-zinc-500"> — later objectives lock 🔒 until earlier ones finish</span>
+            </span>
+          </label>
+        )}
+        <Card>
+          <CardHeader>
+            <CardTitle>Objectives</CardTitle>
+          </CardHeader>
+          <CardContent>
           {project.objectives.length === 0 ? (
             <p className="text-sm text-zinc-500">No objectives yet.</p>
           ) : (
@@ -1224,8 +1225,9 @@ export default function ProjectWorkspace({ initialProjects, projectId, currentUs
               )}
             </form>
           )}
-        </CardContent>
-      </Card>
+          </CardContent>
+        </Card>
+      </div>
       )}
 
       {/* Schedule (standalone quests only — epics & sub-quests are non-recurring) */}

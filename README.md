@@ -25,7 +25,7 @@ Built with Next.js (App Router), Prisma, PostgreSQL, and NextAuth, and fully con
 - **Epic Quests**: quests whose "objectives" are full sub-quests (each with its own objectives, inventory, and page), optionally enforced in order so later sub-quests stay locked (🔒) until earlier ones are complete
 - **Objectives**: ordered, checkable sub-tasks that drive each quest's completion progress. Every quest needs at least one. Reorder them with ↑/↓, and optionally enforce **in-order completion** so later objectives stay locked (🔒) until earlier ones are done
 - **Inventory**: a checklist of named items a quest needs. Check each off as you gather it, and reorder items with ↑/↓
-- **Reorder your board**: drag-free ↑/↓ controls on each active quest card let you arrange the dashboard in whatever order you like
+- **Reorder your board**: drag a quest card by its grip handle (⠿) to rearrange the dashboard, or use the ↑/↓ controls — whichever you prefer. The drag handle is touch-friendly for the Android app, and keyboard reordering works too (focus the handle, Space to lift, arrow keys to move)
 - **Export & import**: back up all your quests to a JSON file from Settings, and import a file to add them to your board (objectives, inventory, epics, recurrence, and completion state all round-trip)
 - **XP & leveling**: every objective, gathered item, and completed quest awards XP, and un-checking claws it back. XP drives your level along a quadratic curve and an evolving rank title (Novice → Squire → Knight → Champion → Hero → Legend), with a level-up celebration
 - **Difficulty & rarity**: tag a quest Trivial → Legendary. Harder quests award more XP and glow brighter on the board
@@ -261,6 +261,11 @@ quest-creation logic (`createProjectForUser`) as the web UI.
 - **CosmeticUnlock**: a cosmetic the user bought with gems (ownership only). The gem balance is derived as `earned − sum(owned prices)`, never stored as a counter. Equipped selections live on `User` (`themeId`/`xpBarId`/`frameId`/`particleId`/`backgroundId`), and the catalog and economy are code-defined in `src/lib/cosmetics.ts`. Free cosmetics (such as the default backgrounds) can be equipped without a purchase, and the per-user `cosmeticsFree` flag unlocks everything for users who opt out of the gem economy
 
 ## Changelog
+
+### 2026-06-21: Drag-and-drop board reordering
+
+- Quests can now be rearranged on the dashboard by **dragging a card's grip handle (⠿)**, in addition to the ↑/↓ buttons. Built on `@dnd-kit` with a pointer sensor (touch-friendly for the Android WebView) and a keyboard sensor for accessible reordering. The handle is owner-only and hidden while a filter is narrowing the board; dragging reuses the existing `reorderProjects` action, so persistence is unchanged
+- The per-quest **"Must be done in order"** objectives toggle moved out of the Objectives card to sit just above it on the quest page
 
 ### 2026-06-21: In-order objectives, reordering, and JSON export/import
 
