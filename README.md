@@ -23,9 +23,9 @@ Built with Next.js (App Router), Prisma, PostgreSQL, and NextAuth, and fully con
 
 - **Quests**: projects with a title, description, and custom icon, created with their objectives (and optional inventory) up front
 - **Epic Quests**: quests whose "objectives" are full sub-quests (each with its own objectives, inventory, and page), optionally enforced in order so later sub-quests stay locked (🔒) until earlier ones are complete
-- **Objectives**: ordered, checkable sub-tasks that drive each quest's completion progress. Every quest needs at least one. Reorder them with ↑/↓, and optionally enforce **in-order completion** so later objectives stay locked (🔒) until earlier ones are done
-- **Inventory**: a checklist of named items a quest needs. Check each off as you gather it, and reorder items with ↑/↓
-- **Reorder your board**: drag a quest card by its grip handle (⠿) to rearrange the dashboard, or use the ↑/↓ controls — whichever you prefer. The drag handle is touch-friendly for the Android app, and keyboard reordering works too (focus the handle, Space to lift, arrow keys to move)
+- **Objectives**: ordered, checkable sub-tasks that drive each quest's completion progress. Every quest needs at least one. Reorder them by dragging the grip handle (⠿) or with the ↑/↓ controls, and optionally enforce **in-order completion** so later objectives stay locked (🔒) until earlier ones are done
+- **Inventory**: a checklist of named items a quest needs. Check each off as you gather it, and reorder items by dragging (⠿) or with ↑/↓
+- **Reorder anything**: quests on the dashboard, objectives, and inventory items all reorder by dragging a grip handle (⠿) or with the ↑/↓ controls — whichever you prefer. The drag handles are touch-friendly for the Android app, and keyboard reordering works too (focus the handle, Space to lift, arrow keys to move). On touch devices the controls stay visible since there's no hover
 - **Export & import**: back up all your quests to a JSON file from Settings, and import a file to add them to your board (objectives, inventory, epics, recurrence, and completion state all round-trip)
 - **XP & leveling**: every objective, gathered item, and completed quest awards XP, and un-checking claws it back. XP drives your level along a quadratic curve and an evolving rank title (Novice → Squire → Knight → Champion → Hero → Legend), with a level-up celebration
 - **Difficulty & rarity**: tag a quest Trivial → Legendary. Harder quests award more XP and glow brighter on the board
@@ -261,6 +261,11 @@ quest-creation logic (`createProjectForUser`) as the web UI.
 - **CosmeticUnlock**: a cosmetic the user bought with gems (ownership only). The gem balance is derived as `earned − sum(owned prices)`, never stored as a counter. Equipped selections live on `User` (`themeId`/`xpBarId`/`frameId`/`particleId`/`backgroundId`), and the catalog and economy are code-defined in `src/lib/cosmetics.ts`. Free cosmetics (such as the default backgrounds) can be equipped without a purchase, and the per-user `cosmeticsFree` flag unlocks everything for users who opt out of the gem economy
 
 ## Changelog
+
+### 2026-06-22: Drag-and-drop everywhere + touch-visible controls
+
+- Objectives and inventory items can now be **dragged by a grip handle (⠿)** to reorder, matching the dashboard quest cards (the ↑/↓ buttons stay too). New `reorderObjectives` / `reorderInventoryItems` server actions persist a full new order; built on `@dnd-kit` with a shared `SortableRow` wrapper and `verticalListSortingStrategy`
+- **Touch visibility fix**: the reorder/edit/delete controls (and the new drag handles) were hidden behind `group-hover`, so they never appeared on touch devices like the Android app. They now stay visible on coarse-pointer (touch) devices via a `[@media(pointer:coarse)]` variant, while desktop keeps the hover-reveal
 
 ### 2026-06-21: Drag-and-drop board reordering
 

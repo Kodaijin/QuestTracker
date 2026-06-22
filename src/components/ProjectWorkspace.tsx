@@ -4,6 +4,23 @@ import { useEffect, useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { RecurrenceType, Difficulty } from '@prisma/client';
+import {
+  DndContext,
+  closestCenter,
+  PointerSensor,
+  KeyboardSensor,
+  useSensor,
+  useSensors,
+  type DragEndEvent,
+} from '@dnd-kit/core';
+import {
+  SortableContext,
+  useSortable,
+  arrayMove,
+  verticalListSortingStrategy,
+  sortableKeyboardCoordinates,
+} from '@dnd-kit/sortable';
+import { CSS } from '@dnd-kit/utilities';
 import { useProjectStore } from '@/store/useProjectStore';
 import {
   toggleObjective,
@@ -20,6 +37,8 @@ import {
   reorderSubQuest,
   reorderObjective,
   reorderInventoryItem,
+  reorderObjectives,
+  reorderInventoryItems,
   setSequentialObjectives,
   updateEpicSettings,
   setDifficulty,
@@ -74,6 +93,40 @@ function toDateInputValue(d: Date | string | null): string {
   const m = String(date.getMonth() + 1).padStart(2, '0');
   const day = String(date.getDate()).padStart(2, '0');
   return `${y}-${m}-${day}`;
+}
+
+// Drag bag handed to a sortable list row so it can wire up its wrapper and grip handle.
+type SortableRowBag = Pick<
+  ReturnType<typeof useSortable>,
+  'setNodeRef' | 'setActivatorNodeRef' | 'attributes' | 'listeners' | 'isDragging'
+> & { style: React.CSSProperties };
+
+/** Registers a list row as a sortable item and exposes the sortable bag via render-prop. */
+function SortableRow({
+  id,
+  children,
+}: {
+  id: string;
+  children: (bag: SortableRowBag) => React.ReactNode;
+}) {
+  const {
+    setNodeRef,
+    setActivatorNodeRef,
+    transform,
+    transition,
+    attributes,
+    listeners,
+    isDragging,
+  } = useSortable({ id });
+  const style: React.CSSProperties = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+  };
+  return (
+    <>
+      {children({ setNodeRef, setActivatorNodeRef, style, attributes, listeners, isDragging })}
+    </>
+  );
 }
 
 export default function ProjectWorkspace({ initialProjects, projectId, currentUserId }: Props) {
@@ -632,6 +685,50 @@ export default function ProjectWorkspace({ initialProjects, projectId, currentUs
     });
   }
 
+  // Drag-and-drop reordering (objectives + inventory), touch-friendly via grip handles.
+  const dndSensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 4 } }),
+    useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
+  );
+
+  function handleObjectiveDragEnd(event: DragEndEvent) {
+    if (!project) return;
+    const { active, over } = event;
+    if (!over || active.id === over.id) return;
+    const ids = project.objectives.map((o) => o.id);
+    const oldIndex = ids.indexOf(String(active.id));
+    const newIndex = ids.indexOf(String(over.id));
+    if (oldIndex === -1 || newIndex === -1) return;
+    const orderedIds = arrayMove(ids, oldIndex, newIndex);
+    startMutateObj(async () => {
+      try {
+        await reorderObjectives({ projectId, orderedIds });
+        router.refresh();
+      } catch {
+        /* best-effort reorder; refresh will resync on next load */
+      }
+    });
+  }
+
+  function handleItemDragEnd(event: DragEndEvent) {
+    if (!project) return;
+    const { active, over } = event;
+    if (!over || active.id === over.id) return;
+    const ids = project.inventoryItems.map((i) => i.id);
+    const oldIndex = ids.indexOf(String(active.id));
+    const newIndex = ids.indexOf(String(over.id));
+    if (oldIndex === -1 || newIndex === -1) return;
+    const orderedIds = arrayMove(ids, oldIndex, newIndex);
+    startMutateItem(async () => {
+      try {
+        await reorderInventoryItems({ projectId, orderedIds });
+        router.refresh();
+      } catch {
+        /* best-effort reorder; refresh will resync on next load */
+      }
+    });
+  }
+
   async function handleDeleteSubQuest(subQuestId: string, subTitle: string) {
     if (!window.confirm(`Delete sub-quest "${subTitle}"? This cannot be undone.`)) return;
     const saved = optimisticDeleteProj(subQuestId);
@@ -642,6 +739,230 @@ export default function ProjectWorkspace({ initialProjects, projectId, currentUs
       if (saved) rollbackDeleteProj(saved);
     }
   }
+
+  // ── Row renderers (shared by the sortable and plain list paths) ──────────────
+
+  const renderObjectiveRow = (
+    obj: ProjectWithRelations['objectives'][number],
+    idx: number,
+    bag?: SortableRowBag,
+  ) => {
+    const isCelebrating = celebrate?.objId === obj.id;
+    const objIsLocked = objLocked.has(obj.id);
+    return (
+      <li
+        key={obj.id}
+        ref={bag?.setNodeRef}
+        style={bag?.style}
+        className={cn(
+          'relative flex items-center gap-2 rounded-lg px-2 py-2 -mx-2 hover:bg-zinc-800/40 transition-colors group',
+          isCelebrating && 'animate-objective-glow',
+          bag?.isDragging && 'z-10 bg-zinc-800/60 shadow-lg',
+        )}
+      >
+        {editingObjId === obj.id ? (
+          <>
+            <input
+              autoFocus
+              type="text"
+              value={objDraft}
+              onChange={(e) => setObjDraft(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') handleSaveObj(obj.id);
+                if (e.key === 'Escape') cancelEditObj();
+              }}
+              className="field flex-1 text-sm"
+            />
+            <Button
+              size="sm"
+              onClick={() => handleSaveObj(obj.id)}
+              disabled={isSavingObj || !objDraft.trim()}
+            >
+              Save
+            </Button>
+            <Button size="sm" variant="ghost" onClick={cancelEditObj}>
+              Cancel
+            </Button>
+          </>
+        ) : (
+          <>
+            <span className="relative inline-flex flex-shrink-0">
+              <Checkbox
+                checked={obj.isCompleted}
+                onCheckedChange={() => handleToggle(obj.id)}
+                disabled={locked || objIsLocked}
+                className={cn(isCelebrating && 'animate-check-pop')}
+              />
+              {isCelebrating && <SparkleBurst key={celebrate.nonce} />}
+            </span>
+            <span
+              className={cn(
+                'text-sm flex-1 transition-colors',
+                obj.isCompleted
+                  ? 'text-zinc-500 line-through'
+                  : objIsLocked
+                    ? 'text-zinc-500'
+                    : 'text-zinc-200',
+              )}
+            >
+              {objIsLocked && <span aria-hidden className="mr-1">🔒</span>}
+              {obj.title}
+            </span>
+            {canEdit && (
+              <div className="opacity-0 group-hover:opacity-100 [@media(pointer:coarse)]:opacity-100 transition-opacity flex items-center gap-0.5">
+                {bag && (
+                  <button
+                    type="button"
+                    ref={bag.setActivatorNodeRef}
+                    {...bag.attributes}
+                    {...bag.listeners}
+                    aria-label={`Drag "${obj.title}" to reorder`}
+                    className="cursor-grab active:cursor-grabbing touch-none text-zinc-500 hover:text-indigo-400 transition-colors px-1 text-sm"
+                  >
+                    ⠿
+                  </button>
+                )}
+                <button
+                  onClick={() => handleReorderObjective(obj.id, 'up')}
+                  disabled={idx === 0 || isMutatingObj}
+                  aria-label={`Move "${obj.title}" up`}
+                  className="text-zinc-500 hover:text-indigo-400 disabled:opacity-30 disabled:hover:text-zinc-500 transition-colors px-1 text-sm"
+                >
+                  ↑
+                </button>
+                <button
+                  onClick={() => handleReorderObjective(obj.id, 'down')}
+                  disabled={idx === project.objectives.length - 1 || isMutatingObj}
+                  aria-label={`Move "${obj.title}" down`}
+                  className="text-zinc-500 hover:text-indigo-400 disabled:opacity-30 disabled:hover:text-zinc-500 transition-colors px-1 text-sm"
+                >
+                  ↓
+                </button>
+                <button
+                  onClick={() => beginEditObj(obj.id, obj.title)}
+                  aria-label={`Rename "${obj.title}"`}
+                  className="text-zinc-500 hover:text-indigo-400 transition-colors px-1 text-sm"
+                >
+                  ✏
+                </button>
+                <button
+                  onClick={() => handleDeleteObj(obj.id)}
+                  aria-label={`Delete "${obj.title}"`}
+                  className="text-zinc-500 hover:text-red-400 transition-colors px-1 text-sm"
+                >
+                  ✕
+                </button>
+              </div>
+            )}
+          </>
+        )}
+      </li>
+    );
+  };
+
+  const renderInventoryRow = (
+    item: ProjectWithRelations['inventoryItems'][number],
+    idx: number,
+    bag?: SortableRowBag,
+  ) => (
+    <li
+      key={item.id}
+      ref={bag?.setNodeRef}
+      style={bag?.style}
+      className={cn(
+        'flex items-center gap-2 py-3 first:pt-0 last:pb-0 group',
+        bag?.isDragging && 'relative z-10 bg-zinc-800/60 shadow-lg',
+      )}
+    >
+      {editingItemId === item.id ? (
+        <>
+          <input
+            autoFocus
+            type="text"
+            value={editItemDraft}
+            onChange={(e) => setEditItemDraft(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') handleSaveItemName(item.id);
+              if (e.key === 'Escape') cancelEditItem();
+            }}
+            className="field flex-1 text-sm"
+          />
+          <Button
+            size="sm"
+            onClick={() => handleSaveItemName(item.id)}
+            disabled={isSavingItemName || !editItemDraft.trim()}
+          >
+            Save
+          </Button>
+          <Button size="sm" variant="ghost" onClick={cancelEditItem}>
+            Cancel
+          </Button>
+        </>
+      ) : (
+        <>
+          <Checkbox
+            checked={item.gathered}
+            onCheckedChange={() => handleToggleItem(item.id)}
+            aria-label={`Mark "${item.name}" as gathered`}
+          />
+          <span
+            className={cn(
+              'text-sm flex-1 min-w-0 truncate transition-colors',
+              item.gathered ? 'text-zinc-500 line-through' : 'text-zinc-200',
+            )}
+          >
+            {item.name}
+          </span>
+          {canEdit && (
+            <div className="opacity-0 group-hover:opacity-100 [@media(pointer:coarse)]:opacity-100 transition-opacity flex items-center gap-0.5 shrink-0">
+              {bag && (
+                <button
+                  type="button"
+                  ref={bag.setActivatorNodeRef}
+                  {...bag.attributes}
+                  {...bag.listeners}
+                  aria-label={`Drag "${item.name}" to reorder`}
+                  className="cursor-grab active:cursor-grabbing touch-none text-zinc-500 hover:text-indigo-400 transition-colors px-1 text-sm"
+                >
+                  ⠿
+                </button>
+              )}
+              <button
+                onClick={() => handleReorderItem(item.id, 'up')}
+                disabled={idx === 0 || isMutatingItem}
+                aria-label={`Move "${item.name}" up`}
+                className="text-zinc-500 hover:text-indigo-400 disabled:opacity-30 disabled:hover:text-zinc-500 transition-colors px-1 text-sm"
+              >
+                ↑
+              </button>
+              <button
+                onClick={() => handleReorderItem(item.id, 'down')}
+                disabled={idx === project.inventoryItems.length - 1 || isMutatingItem}
+                aria-label={`Move "${item.name}" down`}
+                className="text-zinc-500 hover:text-indigo-400 disabled:opacity-30 disabled:hover:text-zinc-500 transition-colors px-1 text-sm"
+              >
+                ↓
+              </button>
+              <button
+                onClick={() => beginEditItem(item.id, item.name)}
+                aria-label={`Rename "${item.name}"`}
+                className="text-zinc-500 hover:text-indigo-400 transition-colors px-1 text-sm"
+              >
+                ✏
+              </button>
+              <button
+                onClick={() => handleDeleteItem(item.id)}
+                aria-label={`Delete "${item.name}"`}
+                className="text-zinc-500 hover:text-red-400 transition-colors px-1 text-sm"
+              >
+                ✕
+              </button>
+            </div>
+          )}
+        </>
+      )}
+    </li>
+  );
 
   // ── Render ────────────────────────────────────────────────────────────────────
 
@@ -1097,106 +1418,30 @@ export default function ProjectWorkspace({ initialProjects, projectId, currentUs
           {project.objectives.length === 0 ? (
             <p className="text-sm text-zinc-500">No objectives yet.</p>
           ) : (
-            <ul className="space-y-1">
-              {project.objectives.map((obj, idx) => {
-                const isCelebrating = celebrate?.objId === obj.id;
-                const objIsLocked = objLocked.has(obj.id);
-                return (
-                <li
-                  key={obj.id}
-                  className={cn(
-                    'relative flex items-center gap-2 rounded-lg px-2 py-2 -mx-2 hover:bg-zinc-800/40 transition-colors group',
-                    isCelebrating && 'animate-objective-glow',
-                  )}
+            canEdit ? (
+              <DndContext
+                sensors={dndSensors}
+                collisionDetection={closestCenter}
+                onDragEnd={handleObjectiveDragEnd}
+              >
+                <SortableContext
+                  items={project.objectives.map((o) => o.id)}
+                  strategy={verticalListSortingStrategy}
                 >
-                  {editingObjId === obj.id ? (
-                    <>
-                      <input
-                        autoFocus
-                        type="text"
-                        value={objDraft}
-                        onChange={(e) => setObjDraft(e.target.value)}
-                        onKeyDown={(e) => {
-                          if (e.key === 'Enter') handleSaveObj(obj.id);
-                          if (e.key === 'Escape') cancelEditObj();
-                        }}
-                        className="field flex-1 text-sm"
-                      />
-                      <Button
-                        size="sm"
-                        onClick={() => handleSaveObj(obj.id)}
-                        disabled={isSavingObj || !objDraft.trim()}
-                      >
-                        Save
-                      </Button>
-                      <Button size="sm" variant="ghost" onClick={cancelEditObj}>
-                        Cancel
-                      </Button>
-                    </>
-                  ) : (
-                    <>
-                      <span className="relative inline-flex flex-shrink-0">
-                        <Checkbox
-                          checked={obj.isCompleted}
-                          onCheckedChange={() => handleToggle(obj.id)}
-                          disabled={locked || objIsLocked}
-                          className={cn(isCelebrating && 'animate-check-pop')}
-                        />
-                        {isCelebrating && <SparkleBurst key={celebrate.nonce} />}
-                      </span>
-                      <span
-                        className={cn(
-                          'text-sm flex-1 transition-colors',
-                          obj.isCompleted
-                            ? 'text-zinc-500 line-through'
-                            : objIsLocked
-                              ? 'text-zinc-500'
-                              : 'text-zinc-200',
-                        )}
-                      >
-                        {objIsLocked && <span aria-hidden className="mr-1">🔒</span>}
-                        {obj.title}
-                      </span>
-                      {canEdit && (
-                        <div className="opacity-0 group-hover:opacity-100 transition-opacity flex items-center gap-0.5">
-                          <button
-                            onClick={() => handleReorderObjective(obj.id, 'up')}
-                            disabled={idx === 0 || isMutatingObj}
-                            aria-label={`Move "${obj.title}" up`}
-                            className="text-zinc-500 hover:text-indigo-400 disabled:opacity-30 disabled:hover:text-zinc-500 transition-colors px-1 text-sm"
-                          >
-                            ↑
-                          </button>
-                          <button
-                            onClick={() => handleReorderObjective(obj.id, 'down')}
-                            disabled={idx === project.objectives.length - 1 || isMutatingObj}
-                            aria-label={`Move "${obj.title}" down`}
-                            className="text-zinc-500 hover:text-indigo-400 disabled:opacity-30 disabled:hover:text-zinc-500 transition-colors px-1 text-sm"
-                          >
-                            ↓
-                          </button>
-                          <button
-                            onClick={() => beginEditObj(obj.id, obj.title)}
-                            aria-label={`Rename "${obj.title}"`}
-                            className="text-zinc-500 hover:text-indigo-400 transition-colors px-1 text-sm"
-                          >
-                            ✏
-                          </button>
-                          <button
-                            onClick={() => handleDeleteObj(obj.id)}
-                            aria-label={`Delete "${obj.title}"`}
-                            className="text-zinc-500 hover:text-red-400 transition-colors px-1 text-sm"
-                          >
-                            ✕
-                          </button>
-                        </div>
-                      )}
-                    </>
-                  )}
-                </li>
-                );
-              })}
-            </ul>
+                  <ul className="space-y-1">
+                    {project.objectives.map((obj, idx) => (
+                      <SortableRow key={obj.id} id={obj.id}>
+                        {(bag) => renderObjectiveRow(obj, idx, bag)}
+                      </SortableRow>
+                    ))}
+                  </ul>
+                </SortableContext>
+              </DndContext>
+            ) : (
+              <ul className="space-y-1">
+                {project.objectives.map((obj, idx) => renderObjectiveRow(obj, idx))}
+              </ul>
+            )
           )}
 
           {objEditError && (
@@ -1384,92 +1629,30 @@ export default function ProjectWorkspace({ initialProjects, projectId, currentUs
           {project.inventoryItems.length === 0 ? (
             <p className="text-sm text-zinc-500">No inventory items yet.</p>
           ) : (
-            <ul className="divide-y divide-zinc-800/70">
-              {project.inventoryItems.map((item, idx) => (
-                <li
-                  key={item.id}
-                  className="flex items-center gap-2 py-3 first:pt-0 last:pb-0 group"
+            canEdit ? (
+              <DndContext
+                sensors={dndSensors}
+                collisionDetection={closestCenter}
+                onDragEnd={handleItemDragEnd}
+              >
+                <SortableContext
+                  items={project.inventoryItems.map((i) => i.id)}
+                  strategy={verticalListSortingStrategy}
                 >
-                  {editingItemId === item.id ? (
-                    <>
-                      <input
-                        autoFocus
-                        type="text"
-                        value={editItemDraft}
-                        onChange={(e) => setEditItemDraft(e.target.value)}
-                        onKeyDown={(e) => {
-                          if (e.key === 'Enter') handleSaveItemName(item.id);
-                          if (e.key === 'Escape') cancelEditItem();
-                        }}
-                        className="field flex-1 text-sm"
-                      />
-                      <Button
-                        size="sm"
-                        onClick={() => handleSaveItemName(item.id)}
-                        disabled={isSavingItemName || !editItemDraft.trim()}
-                      >
-                        Save
-                      </Button>
-                      <Button size="sm" variant="ghost" onClick={cancelEditItem}>
-                        Cancel
-                      </Button>
-                    </>
-                  ) : (
-                    <>
-                      <Checkbox
-                        checked={item.gathered}
-                        onCheckedChange={() => handleToggleItem(item.id)}
-                        aria-label={`Mark "${item.name}" as gathered`}
-                      />
-                      <span
-                        className={cn(
-                          'text-sm flex-1 min-w-0 truncate transition-colors',
-                          item.gathered
-                            ? 'text-zinc-500 line-through'
-                            : 'text-zinc-200',
-                        )}
-                      >
-                        {item.name}
-                      </span>
-                      {canEdit && (
-                        <div className="opacity-0 group-hover:opacity-100 transition-opacity flex items-center gap-0.5 shrink-0">
-                          <button
-                            onClick={() => handleReorderItem(item.id, 'up')}
-                            disabled={idx === 0 || isMutatingItem}
-                            aria-label={`Move "${item.name}" up`}
-                            className="text-zinc-500 hover:text-indigo-400 disabled:opacity-30 disabled:hover:text-zinc-500 transition-colors px-1 text-sm"
-                          >
-                            ↑
-                          </button>
-                          <button
-                            onClick={() => handleReorderItem(item.id, 'down')}
-                            disabled={idx === project.inventoryItems.length - 1 || isMutatingItem}
-                            aria-label={`Move "${item.name}" down`}
-                            className="text-zinc-500 hover:text-indigo-400 disabled:opacity-30 disabled:hover:text-zinc-500 transition-colors px-1 text-sm"
-                          >
-                            ↓
-                          </button>
-                          <button
-                            onClick={() => beginEditItem(item.id, item.name)}
-                            aria-label={`Rename "${item.name}"`}
-                            className="text-zinc-500 hover:text-indigo-400 transition-colors px-1 text-sm"
-                          >
-                            ✏
-                          </button>
-                          <button
-                            onClick={() => handleDeleteItem(item.id)}
-                            aria-label={`Delete "${item.name}"`}
-                            className="text-zinc-500 hover:text-red-400 transition-colors px-1 text-sm"
-                          >
-                            ✕
-                          </button>
-                        </div>
-                      )}
-                    </>
-                  )}
-                </li>
-              ))}
-            </ul>
+                  <ul className="divide-y divide-zinc-800/70">
+                    {project.inventoryItems.map((item, idx) => (
+                      <SortableRow key={item.id} id={item.id}>
+                        {(bag) => renderInventoryRow(item, idx, bag)}
+                      </SortableRow>
+                    ))}
+                  </ul>
+                </SortableContext>
+              </DndContext>
+            ) : (
+              <ul className="divide-y divide-zinc-800/70">
+                {project.inventoryItems.map((item, idx) => renderInventoryRow(item, idx))}
+              </ul>
+            )
           )}
 
           {editItemError && (

@@ -949,6 +949,75 @@ export async function reorderInventoryItem(
   ]);
 }
 
+const reorderObjectivesSchema = z.object({
+  projectId: z.string().min(1, 'projectId is required'),
+  orderedIds: z.array(z.string().min(1)).min(1),
+});
+
+const reorderInventoryItemsSchema = z.object({
+  projectId: z.string().min(1, 'projectId is required'),
+  orderedIds: z.array(z.string().min(1)).min(1),
+});
+
+/** Persist a new full ordering of a quest's objectives (drag-and-drop). */
+export async function reorderObjectives(
+  input: z.infer<typeof reorderObjectivesSchema>,
+): Promise<void> {
+  const userId = await requireUserId();
+
+  const parsed = reorderObjectivesSchema.safeParse(input);
+  if (!parsed.success) {
+    throw new Error(parsed.error.issues[0]?.message ?? 'Invalid input');
+  }
+
+  const { projectId, orderedIds } = parsed.data;
+  await assertCanEditQuest(projectId, userId);
+
+  // Only reorder objectives that actually belong to this quest.
+  const objectives = await prisma.objective.findMany({
+    where: { projectId },
+    select: { id: true },
+  });
+  const valid = new Set(objectives.map((o) => o.id));
+  const ordered = orderedIds.filter((id) => valid.has(id));
+  if (ordered.length < 2) return;
+
+  await prisma.$transaction(
+    ordered.map((id, i) =>
+      prisma.objective.update({ where: { id }, data: { order: i + 1 } }),
+    ),
+  );
+}
+
+/** Persist a new full ordering of a quest's inventory items (drag-and-drop). */
+export async function reorderInventoryItems(
+  input: z.infer<typeof reorderInventoryItemsSchema>,
+): Promise<void> {
+  const userId = await requireUserId();
+
+  const parsed = reorderInventoryItemsSchema.safeParse(input);
+  if (!parsed.success) {
+    throw new Error(parsed.error.issues[0]?.message ?? 'Invalid input');
+  }
+
+  const { projectId, orderedIds } = parsed.data;
+  await assertCanEditQuest(projectId, userId);
+
+  const items = await prisma.inventoryItem.findMany({
+    where: { projectId },
+    select: { id: true },
+  });
+  const valid = new Set(items.map((i) => i.id));
+  const ordered = orderedIds.filter((id) => valid.has(id));
+  if (ordered.length < 2) return;
+
+  await prisma.$transaction(
+    ordered.map((id, i) =>
+      prisma.inventoryItem.update({ where: { id }, data: { order: i + 1 } }),
+    ),
+  );
+}
+
 /**
  * Reorder top-level quests on the dashboard. `orderedIds` is the desired order of
  * a set of the user's owned quests (e.g. the active board). Their current

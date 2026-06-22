@@ -610,7 +610,7 @@ export default function DashboardClient({
           </Card>
         </Link>
         {project.userId === currentUserId && (
-          <div className="absolute top-3 right-3 flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity z-10">
+          <div className="absolute top-3 right-3 flex items-center gap-0.5 opacity-0 group-hover:opacity-100 [@media(pointer:coarse)]:opacity-100 transition-opacity z-10">
             {reorderable && sortable && (
               <button
                 type="button"
