@@ -46,6 +46,7 @@ import {
   setQuestTiming,
   setMemberPermissions,
   deleteProject,
+  dismissMissedQuest,
 } from '@/app/actions/projects';
 import type { ProjectWithRelations } from '@/app/actions/projects';
 import { leaveQuest } from '@/app/actions/party';
@@ -207,6 +208,7 @@ export default function ProjectWorkspace({ initialProjects, projectId, currentUs
   const [isSavingTiming, startSaveTiming] = useTransition();
   const [isSavingPerms, startSavePerms] = useTransition();
   const [isLeaving, startLeave] = useTransition();
+  const [isDismissing, startDismiss] = useTransition();
   const [leaveError, setLeaveError] = useState<string | null>(null);
   const [isMutatingObj, startMutateObj] = useTransition();
   const [isMutatingItem, startMutateItem] = useTransition();
@@ -286,6 +288,25 @@ export default function ProjectWorkspace({ initialProjects, projectId, currentUs
   const countdown = upcoming
     ? null
     : deadlineCountdown(project.deadline, timingNow, questComplete);
+
+  const canSkipMissed =
+    missed &&
+    project.recurrenceType !== RecurrenceType.NONE &&
+    project.recurrenceType !== RecurrenceType.SPECIFIC_DATE;
+
+  // Skip a missed recurring quest: drop the overdue cycle (no XP) and resume the
+  // schedule at the current occurrence. A refresh re-runs syncRecurringQuests.
+  const dismissProjectId = project.id;
+  function handleDismissMissed() {
+    startDismiss(async () => {
+      try {
+        await dismissMissedQuest({ projectId: dismissProjectId });
+        router.refresh();
+      } catch {
+        /* best-effort; a refresh will resync the quest */
+      }
+    });
+  }
 
   // ── Handlers: toggle objective + gather item ──────────────────────────────────
 
@@ -1122,8 +1143,19 @@ export default function ProjectWorkspace({ initialProjects, projectId, currentUs
               </span>
             )}
             {missed && (
-              <span className="inline-flex items-center rounded-md bg-red-950/50 border border-red-500/40 px-2 py-0.5 text-xs font-medium text-red-300">
+              <span className="inline-flex items-center gap-1.5 rounded-md bg-red-950/50 border border-red-500/40 px-2 py-0.5 text-xs font-medium text-red-300">
                 ⚠ Missed
+                {canSkipMissed && (
+                  <button
+                    type="button"
+                    onClick={handleDismissMissed}
+                    disabled={isDismissing}
+                    title="Skip this missed day and keep the quest repeating"
+                    className="rounded bg-red-500/20 px-1.5 py-0.5 text-[11px] font-semibold text-red-200 hover:bg-red-500/30 disabled:opacity-50 transition-colors"
+                  >
+                    {isDismissing ? 'Skipping…' : 'Skip'}
+                  </button>
+                )}
               </span>
             )}
           </div>

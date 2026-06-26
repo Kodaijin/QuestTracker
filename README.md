@@ -262,6 +262,11 @@ quest-creation logic (`createProjectForUser`) as the web UI.
 
 ## Changelog
 
+### 2026-06-25: Skip a missed recurring quest
+
+- Recurring quests that lapse a cycle now show a **Skip** button on their ⚠ Missed badge (dashboard cards, the Today list, and the quest page). Skipping drops the overdue cycle with **no completion and no XP**, resets objectives, and resumes the schedule at the **current** occurrence — so the quest stops showing as missed but keeps repeating. New `dismissMissedQuest` action in `src/app/actions/projects.ts`; only repeating quests are skippable (one-offs and specific-date quests have no next occurrence). Any participant of a shared quest may skip
+- **Completing a missed quest no longer double-counts.** Previously, completing an overdue cycle rolled the due date forward to *today*, so the quest immediately reappeared and had to be done again. The roll-over in `syncRecurringQuests` now anchors on `lastCompletedAt`: a quest finished late counts once and advances to the **next** occurrence (it won't pop back up the same day), while a quest done on time but left idle for days still forgivingly resumes today
+
 ### 2026-06-22: Daily / Weekly / Other cadence containers
 
 - The dashboard's **active board** is now split into bordered **Daily / Weekly / Other** containers so daily and weekly commitments are easy to scan at a glance. Daily = `DAILY` (and every-1-day); Weekly = `WEEKLY` / specific weekdays / every-N-weeks; everything else (one-off, monthly, specific date, every-N-days) falls under Other. Empty containers are hidden, and Upcoming/Completed sections are unchanged

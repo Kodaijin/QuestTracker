@@ -1,10 +1,12 @@
 'use client';
 
-import { useEffect } from 'react';
+import { useEffect, useTransition } from 'react';
+import { useRouter } from 'next/navigation';
 import Link from 'next/link';
+import { RecurrenceType } from '@prisma/client';
 import { useProjectStore } from '@/store/useProjectStore';
-import type { ProjectWithRelations } from '@/app/actions/projects';
-import { recurrenceLabel, questCategory, type QuestCategory } from '@/lib/recurrence';
+import { dismissMissedQuest, type ProjectWithRelations } from '@/app/actions/projects';
+import { recurrenceLabel, isMissed, questCategory, type QuestCategory } from '@/lib/recurrence';
 import { getQuestStatus, questProgress } from '@/lib/quest';
 import { difficultyMeta } from '@/lib/difficulty';
 import { isUpcoming, deadlineCountdown } from '@/lib/timing';
@@ -35,6 +37,8 @@ function effectiveDueTime(project: ProjectWithRelations): number {
 export default function TodayClient({ initialProjects }: Props) {
   const hydrate = useProjectStore((s) => s.hydrate);
   const storeProjects = useProjectStore((s) => s.projects);
+  const router = useRouter();
+  const [isPending, startTransition] = useTransition();
 
   useEffect(() => {
     hydrate(initialProjects);
@@ -42,6 +46,19 @@ export default function TodayClient({ initialProjects }: Props) {
 
   const projects = storeProjects.length > 0 ? storeProjects : initialProjects;
   const now = new Date();
+
+  // Skip a missed recurring quest: drop the overdue cycle (no XP) and resume the
+  // schedule at the current occurrence. A refresh re-runs syncRecurringQuests.
+  function handleDismissMissed(projectId: string) {
+    startTransition(async () => {
+      try {
+        await dismissMissedQuest({ projectId });
+        router.refresh();
+      } catch {
+        /* best-effort; a refresh will resync the list */
+      }
+    });
+  }
 
   // Active, top-level quests that are available now (upcoming ones are excluded
   // — they're not actionable yet).
@@ -74,6 +91,18 @@ export default function TodayClient({ initialProjects }: Props) {
     });
     const unit = project.isEpic ? 'sub-quest' : 'objective';
     const countdown = deadlineCountdown(project.deadline, now, false);
+    const missed = isMissed(
+      {
+        ...project,
+        dueDate: project.dueDate ? new Date(project.dueDate) : null,
+        specificDate: project.specificDate ? new Date(project.specificDate) : null,
+      },
+      now,
+    );
+    const canSkip =
+      missed &&
+      project.recurrenceType !== RecurrenceType.NONE &&
+      project.recurrenceType !== RecurrenceType.SPECIFIC_DATE;
 
     return (
       <Link
@@ -113,6 +142,27 @@ export default function TodayClient({ initialProjects }: Props) {
             </span>
           )}
           {label && <span className="text-zinc-500">{label}</span>}
+          {missed && (
+            <span className="inline-flex items-center gap-1.5 rounded-md bg-red-950/50 border border-red-500/40 px-2 py-0.5 font-medium text-red-300">
+              ⚠ Missed
+              {canSkip && (
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    e.preventDefault();
+                    handleDismissMissed(project.id);
+                  }}
+                  disabled={isPending}
+                  title="Skip this missed day and keep the quest repeating"
+                  aria-label={`Skip the missed "${project.title}" and keep it repeating`}
+                  className="rounded bg-red-500/20 px-1.5 py-0.5 text-[11px] font-semibold text-red-200 hover:bg-red-500/30 disabled:opacity-50 transition-colors"
+                >
+                  Skip
+                </button>
+              )}
+            </span>
+          )}
         </div>
       </Link>
     );

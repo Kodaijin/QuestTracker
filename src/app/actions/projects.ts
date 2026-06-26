@@ -10,6 +10,7 @@ import {
   computeFirstDueDate,
   computeNextDueDate,
   isCompletedThisCycle,
+  isMissed,
   type SchedulableQuest,
 } from '@/lib/recurrence';
 import { objectiveXp, itemXp, questXp } from '@/lib/progression';
@@ -1639,11 +1640,18 @@ export async function syncRecurringQuests(): Promise<void> {
     // SPECIFIC_DATE has no next occurrence — nothing to roll over to.
     if (project.recurrenceType === RecurrenceType.SPECIFIC_DATE) continue;
 
-    // Advance dueDate past `now`, handling multiple elapsed periods.
+    // Anchor the roll-over on when the cycle was actually finished. For an
+    // on-time completion this is the same day as the due date; for a *late*
+    // completion of a missed cycle it's a later day. Rolling past every
+    // occurrence up to and including the one that the completion covers means a
+    // quest done late counts once and lands on the NEXT occurrence instead of
+    // popping back up the same day. The `nextDue < now` term keeps a quest that
+    // was completed on time but left idle for days forgiving (it resumes today).
+    const completedEod = endOfLocalDay(project.lastCompletedAt ?? project.dueDate);
     let nextDue = computeNextDueDate(quest, project.dueDate);
     if (nextDue == null) continue;
 
-    while (nextDue != null && nextDue < now) {
+    while (nextDue != null && (nextDue < now || nextDue <= completedEod)) {
       const following = computeNextDueDate(quest, nextDue);
       if (following == null) break;
       nextDue = following;
@@ -1664,4 +1672,89 @@ export async function syncRecurringQuests(): Promise<void> {
       }),
     ]);
   }
+}
+
+/** End of the local day containing `d` (mirrors recurrence.ts' internal helper). */
+function endOfLocalDay(d: Date): Date {
+  const copy = new Date(d);
+  copy.setHours(23, 59, 59, 999);
+  return copy;
+}
+
+const dismissMissedQuestSchema = z.object({ projectId: z.string().min(1) });
+
+/**
+ * "Skip" a missed recurring quest: forget the overdue cycle (no completion, no
+ * XP) and resume the schedule at the current occurrence. The dueDate advances to
+ * the earliest occurrence on/after now and objectives are reset to unchecked, so
+ * the quest stops showing as ⚠ Missed but keeps repeating. Unlike completing it
+ * late, this awards nothing and leaves today's occurrence available to do fresh.
+ *
+ * Only repeating quests can be dismissed — one-offs (NONE) and SPECIFIC_DATE
+ * quests have no next occurrence to fall back to.
+ */
+export async function dismissMissedQuest(
+  input: z.infer<typeof dismissMissedQuestSchema>,
+): Promise<void> {
+  const userId = await requireUserId();
+
+  const parsed = dismissMissedQuestSchema.safeParse(input);
+  if (!parsed.success) {
+    throw new Error(parsed.error.issues[0]?.message ?? 'Invalid input');
+  }
+  const { projectId } = parsed.data;
+
+  // Any participant (owner or accepted member) may dismiss, like other progress.
+  await assertQuestParticipant(projectId, userId);
+
+  const project = await prisma.project.findUnique({
+    where: { id: projectId },
+    include: { objectives: { select: { isCompleted: true } } },
+  });
+  if (!project || !project.dueDate) throw new Error('Quest not found');
+
+  if (
+    project.recurrenceType === RecurrenceType.NONE ||
+    project.recurrenceType === RecurrenceType.SPECIFIC_DATE
+  ) {
+    throw new Error('This quest does not repeat');
+  }
+
+  const quest: SchedulableQuest = {
+    recurrenceType: project.recurrenceType,
+    dayOfWeek: project.dayOfWeek,
+    intervalWeeks: project.intervalWeeks,
+    intervalDays: project.intervalDays,
+    daysOfWeek: project.daysOfWeek,
+    dayOfMonth: project.dayOfMonth,
+    specificDate: project.specificDate,
+    dueDate: project.dueDate,
+    objectives: project.objectives,
+  };
+
+  const now = new Date();
+  // Only act on quests that are actually missed; otherwise this is a no-op.
+  if (!isMissed(quest, now)) return;
+
+  // Advance to the current occurrence — the first one on/after now — so the
+  // quest is due today (fresh) rather than skipped to the next period.
+  let nextDue = computeNextDueDate(quest, project.dueDate);
+  while (nextDue != null && nextDue < now) {
+    const following = computeNextDueDate(quest, nextDue);
+    if (following == null) break;
+    nextDue = following;
+  }
+  if (nextDue == null) throw new Error('This quest does not repeat');
+
+  // No completion event, no XP, no lastCompletedAt change — the cycle is skipped.
+  await prisma.$transaction([
+    prisma.objective.updateMany({
+      where: { projectId },
+      data: { isCompleted: false },
+    }),
+    prisma.project.update({
+      where: { id: projectId },
+      data: { dueDate: nextDue },
+    }),
+  ]);
 }

@@ -22,7 +22,7 @@ import {
 } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
 import { useProjectStore } from '@/store/useProjectStore';
-import { createProject, deleteProject, reorderProjects } from '@/app/actions/projects';
+import { createProject, deleteProject, dismissMissedQuest, reorderProjects } from '@/app/actions/projects';
 import type { ProjectWithRelations } from '@/app/actions/projects';
 import type { Ally } from '@/app/actions/party';
 import { recurrenceLabel, isMissed, questCategory, type QuestCategory } from '@/lib/recurrence';
@@ -461,6 +461,19 @@ export default function DashboardClient({
     }
   }
 
+  // Skip a missed recurring quest: drop the overdue cycle (no XP) and resume the
+  // schedule at the current occurrence. A refresh re-runs syncRecurringQuests.
+  function handleDismissMissed(projectId: string) {
+    startTransition(async () => {
+      try {
+        await dismissMissedQuest({ projectId });
+        router.refresh();
+      } catch {
+        /* best-effort; a refresh will resync the board */
+      }
+    });
+  }
+
   // Manual board reordering: persist a new active-quest order (used by both the
   // ↑/↓ arrows and drag-and-drop). Disabled while filters are narrowing the board.
   function persistActiveOrder(next: ProjectWithRelations[]) {
@@ -600,8 +613,25 @@ export default function DashboardClient({
                     </span>
                   )}
                   {missed && (
-                    <span className="inline-flex items-center rounded-md bg-red-950/50 border border-red-500/40 px-2 py-0.5 text-xs font-medium text-red-300">
+                    <span className="inline-flex items-center gap-1.5 rounded-md bg-red-950/50 border border-red-500/40 px-2 py-0.5 text-xs font-medium text-red-300">
                       ⚠ Missed
+                      {project.recurrenceType !== RecurrenceType.NONE &&
+                        project.recurrenceType !== RecurrenceType.SPECIFIC_DATE && (
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              e.preventDefault();
+                              handleDismissMissed(project.id);
+                            }}
+                            disabled={isPending}
+                            title="Skip this missed day and keep the quest repeating"
+                            aria-label={`Skip the missed "${project.title}" and keep it repeating`}
+                            className="rounded bg-red-500/20 px-1.5 py-0.5 text-[11px] font-semibold text-red-200 hover:bg-red-500/30 disabled:opacity-50 transition-colors"
+                          >
+                            Skip
+                          </button>
+                        )}
                     </span>
                   )}
                   {upcoming && project.availableAt && (
