@@ -9,6 +9,7 @@ import { prisma } from '@/lib/prisma';
 import {
   computeFirstDueDate,
   computeNextDueDate,
+  endOfLogicalDay,
   isCompletedThisCycle,
   isMissed,
   type SchedulableQuest,
@@ -204,6 +205,7 @@ const recurrenceSchema = z
     daysOfWeek: z.array(z.number().int().min(0).max(6)).optional().default([]),
     dayOfMonth: z.number().int().min(1).max(31).nullable().optional(),
     specificDate: z.string().nullable().optional(), // ISO date string from client
+    resetHour: z.number().int().min(0).max(23).nullable().optional(), // null = user default
   })
   .superRefine((v, ctx) => {
     if (v.recurrenceType === RecurrenceType.WEEKLY) {
@@ -271,8 +273,13 @@ const recurrenceSchema = z
 
 type RecurrenceInput = z.infer<typeof recurrenceSchema>;
 
-/** Normalise unused recurrence fields to null for storage, and convert specificDate string -> Date. */
-function normaliseRecurrence(r: RecurrenceInput): {
+/**
+ * Normalise unused recurrence fields to null for storage, convert specificDate
+ * string -> Date, and compute the first dueDate. `globalResetHour` is the user's
+ * default reset hour; a per-quest override (r.resetHour) takes precedence for the
+ * dueDate math and is persisted on the quest (null = follow the global default).
+ */
+function normaliseRecurrence(r: RecurrenceInput, globalResetHour: number): {
   recurrenceType: RecurrenceType;
   dayOfWeek: number | null;
   intervalWeeks: number | null;
@@ -280,6 +287,7 @@ function normaliseRecurrence(r: RecurrenceInput): {
   daysOfWeek: number[];
   dayOfMonth: number | null;
   specificDate: Date | null;
+  resetHour: number | null;
   dueDate: Date | null;
 } {
   const type = r.recurrenceType;
@@ -287,6 +295,9 @@ function normaliseRecurrence(r: RecurrenceInput): {
     type === RecurrenceType.SPECIFIC_DATE && r.specificDate
       ? new Date(r.specificDate)
       : null;
+
+  // A per-quest reset override only makes sense for repeating quests.
+  const resetHour = type === RecurrenceType.NONE ? null : (r.resetHour ?? null);
 
   const cfg = {
     recurrenceType: type,
@@ -305,9 +316,19 @@ function normaliseRecurrence(r: RecurrenceInput): {
     specificDate: specificDateObj,
   };
 
-  const dueDate = computeFirstDueDate(cfg, new Date());
+  const dueDate = computeFirstDueDate(cfg, new Date(), resetHour ?? globalResetHour);
 
-  return { ...cfg, dueDate };
+  return { ...cfg, resetHour, dueDate };
+}
+
+/** The user's global daily reset hour (0-23). Falls back to the schema default. */
+const DEFAULT_RESET_HOUR = 4;
+async function getUserResetHour(userId: string): Promise<number> {
+  const pref = await prisma.notificationPreference.findUnique({
+    where: { userId },
+    select: { resetHour: true },
+  });
+  return pref?.resetHour ?? DEFAULT_RESET_HOUR;
 }
 
 // ── Schemas ────────────────────────────────────────────────────────────────────
@@ -556,7 +577,7 @@ export async function createProjectForUser(
     throw new Error('At least one objective is required');
   }
 
-  const recFields = normaliseRecurrence(recInput);
+  const recFields = normaliseRecurrence(recInput, await getUserResetHour(userId));
 
   // Share with chosen allies (accepted connections only) as pending invites.
   const allyIds = memberIds.length > 0 ? await acceptedAllyIds(userId) : new Set<string>();
@@ -584,6 +605,7 @@ export async function createProjectForUser(
       daysOfWeek: recFields.daysOfWeek,
       dayOfMonth: recFields.dayOfMonth,
       specificDate: recFields.specificDate,
+      resetHour: recFields.resetHour,
       dueDate: recFields.dueDate,
       objectives: {
         create: objectives.map((objTitle, index) => ({
@@ -1301,7 +1323,7 @@ export async function updateProject(
   }
 
   const { projectId, title, description, ...recInput } = parsed.data;
-  const recFields = normaliseRecurrence(recInput);
+  const recFields = normaliseRecurrence(recInput, await getUserResetHour(userId));
 
   const project = await prisma.project.findUnique({
     where: { id: projectId },
@@ -1323,6 +1345,7 @@ export async function updateProject(
       daysOfWeek: recFields.daysOfWeek,
       dayOfMonth: recFields.dayOfMonth,
       specificDate: recFields.specificDate,
+      resetHour: recFields.resetHour,
       dueDate: recFields.dueDate,
     },
   });
@@ -1618,9 +1641,13 @@ export async function syncRecurringQuests(): Promise<void> {
   });
 
   const now = new Date();
+  const globalResetHour = await getUserResetHour(userId);
 
   for (const project of projects) {
     if (!project.dueDate) continue;
+
+    // Per-quest override falls back to the user's global reset hour.
+    const resetHour = project.resetHour ?? globalResetHour;
 
     const quest: SchedulableQuest = {
       recurrenceType: project.recurrenceType,
@@ -1647,12 +1674,12 @@ export async function syncRecurringQuests(): Promise<void> {
     // quest done late counts once and lands on the NEXT occurrence instead of
     // popping back up the same day. The `nextDue < now` term keeps a quest that
     // was completed on time but left idle for days forgiving (it resumes today).
-    const completedEod = endOfLocalDay(project.lastCompletedAt ?? project.dueDate);
-    let nextDue = computeNextDueDate(quest, project.dueDate);
+    const completedEod = endOfLogicalDay(project.lastCompletedAt ?? project.dueDate, resetHour);
+    let nextDue = computeNextDueDate(quest, project.dueDate, resetHour);
     if (nextDue == null) continue;
 
     while (nextDue != null && (nextDue < now || nextDue <= completedEod)) {
-      const following = computeNextDueDate(quest, nextDue);
+      const following = computeNextDueDate(quest, nextDue, resetHour);
       if (following == null) break;
       nextDue = following;
     }
@@ -1672,13 +1699,6 @@ export async function syncRecurringQuests(): Promise<void> {
       }),
     ]);
   }
-}
-
-/** End of the local day containing `d` (mirrors recurrence.ts' internal helper). */
-function endOfLocalDay(d: Date): Date {
-  const copy = new Date(d);
-  copy.setHours(23, 59, 59, 999);
-  return copy;
 }
 
 const dismissMissedQuestSchema = z.object({ projectId: z.string().min(1) });
@@ -1736,11 +1756,13 @@ export async function dismissMissedQuest(
   // Only act on quests that are actually missed; otherwise this is a no-op.
   if (!isMissed(quest, now)) return;
 
+  const resetHour = project.resetHour ?? (await getUserResetHour(userId));
+
   // Advance to the current occurrence — the first one on/after now — so the
   // quest is due today (fresh) rather than skipped to the next period.
-  let nextDue = computeNextDueDate(quest, project.dueDate);
+  let nextDue = computeNextDueDate(quest, project.dueDate, resetHour);
   while (nextDue != null && nextDue < now) {
-    const following = computeNextDueDate(quest, nextDue);
+    const following = computeNextDueDate(quest, nextDue, resetHour);
     if (following == null) break;
     nextDue = following;
   }

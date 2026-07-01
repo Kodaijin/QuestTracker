@@ -218,7 +218,7 @@ function parseDate(value: string | null | undefined): Date | null {
 }
 
 /** Resolve a quest's recurrence config and its first due date, the way creation does. */
-function recurrenceFor(q: ImportedQuest) {
+function recurrenceFor(q: ImportedQuest, resetHour: number) {
   const type = q.recurrenceType;
   const cfg = {
     recurrenceType: type,
@@ -236,7 +236,7 @@ function recurrenceFor(q: ImportedQuest) {
     specificDate:
       type === RecurrenceType.SPECIFIC_DATE ? parseDate(q.specificDate) : null,
   };
-  return { ...cfg, dueDate: computeFirstDueDate(cfg, new Date()) };
+  return { ...cfg, dueDate: computeFirstDueDate(cfg, new Date(), resetHour) };
 }
 
 export async function importQuests(
@@ -253,6 +253,13 @@ export async function importQuests(
   if (quests.length === 0) {
     return { ok: false, error: 'The file contains no quests to import.' };
   }
+
+  // Imported quests follow the user's global reset hour for their first due date.
+  const resetPref = await prisma.notificationPreference.findUnique({
+    where: { userId },
+    select: { resetHour: true },
+  });
+  const globalResetHour = resetPref?.resetHour ?? 4;
 
   const last = await prisma.project.findFirst({
     where: { userId, parentId: null },
@@ -311,7 +318,7 @@ export async function importQuests(
       continue;
     }
 
-    const rec = recurrenceFor(q);
+    const rec = recurrenceFor(q, globalResetHour);
     await prisma.project.create({
       data: {
         title: q.title,

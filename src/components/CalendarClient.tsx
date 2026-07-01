@@ -63,7 +63,10 @@ export default function CalendarClient({ initialProjects }: Props) {
         dayOfMonth: p.dayOfMonth,
         specificDate: p.specificDate ? new Date(p.specificDate) : null,
       };
-      for (const occ of occurrencesInRange(cfg, rangeStart, rangeEnd)) {
+      // Plot occurrences on their natural calendar day (resetHour 0). The reset
+      // hour only shifts the due *instant* a few hours; using it here would push a
+      // late-morning boundary onto the next day's cell.
+      for (const occ of occurrencesInRange(cfg, rangeStart, rangeEnd, 0)) {
         const key = dayKey(occ);
         const arr = map.get(key) ?? [];
         arr.push(p);

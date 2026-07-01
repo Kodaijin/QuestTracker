@@ -374,6 +374,31 @@ export default function SettingsClient({
               </div>
             </div>
 
+            {/* Daily reset time — governs when repeating quests roll over. Not a
+                reminder, so it stays active even when reminders are disabled. */}
+            <div className="border-t border-zinc-800 pt-4 space-y-1.5">
+              <div className="flex items-center justify-between gap-3">
+                <span className="text-sm font-medium text-zinc-200">Daily reset time</span>
+                <select
+                  value={prefs.resetHour}
+                  onChange={(e) => setPref('resetHour', Number(e.target.value))}
+                  className="field max-w-[8rem]"
+                  aria-label="Daily reset time"
+                >
+                  {Array.from({ length: 24 }, (_, h) => (
+                    <option key={h} value={h}>
+                      {String(h).padStart(2, '0')}:00
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <p className="text-xs text-zinc-500">
+                Repeating quests roll over and reset at this hour each day. A later
+                time (e.g. 04:00) lets late-night activity still count for the
+                previous day. Individual quests can override this.
+              </p>
+            </div>
+
             {prefsSuccess && <SuccessBox message={prefsSuccess} />}
 
             <button

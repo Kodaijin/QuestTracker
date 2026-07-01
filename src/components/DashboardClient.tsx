@@ -170,6 +170,8 @@ export default function DashboardClient({
   const [daysOfWeek, setDaysOfWeek] = useState<number[]>([]);
   const [dayOfMonth, setDayOfMonth] = useState<number>(1);
   const [specificDate, setSpecificDate] = useState<string>('');
+  // Per-quest reset hour override; null = follow the user's global default.
+  const [resetHour, setResetHour] = useState<number | null>(null);
 
   useEffect(() => {
     hydrate(initialProjects);
@@ -263,6 +265,7 @@ export default function DashboardClient({
     setDaysOfWeek([]);
     setDayOfMonth(1);
     setSpecificDate('');
+    setResetHour(null);
   }
 
   function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
@@ -432,17 +435,17 @@ export default function DashboardClient({
       case RecurrenceType.NONE:
         return { recurrenceType: RecurrenceType.NONE };
       case RecurrenceType.DAILY:
-        return { recurrenceType: RecurrenceType.DAILY };
+        return { recurrenceType: RecurrenceType.DAILY, resetHour };
       case RecurrenceType.WEEKLY:
-        return { recurrenceType: RecurrenceType.WEEKLY, dayOfWeek };
+        return { recurrenceType: RecurrenceType.WEEKLY, dayOfWeek, resetHour };
       case RecurrenceType.EVERY_N_WEEKS:
-        return { recurrenceType: RecurrenceType.EVERY_N_WEEKS, dayOfWeek, intervalWeeks };
+        return { recurrenceType: RecurrenceType.EVERY_N_WEEKS, dayOfWeek, intervalWeeks, resetHour };
       case RecurrenceType.EVERY_N_DAYS:
-        return { recurrenceType: RecurrenceType.EVERY_N_DAYS, intervalDays };
+        return { recurrenceType: RecurrenceType.EVERY_N_DAYS, intervalDays, resetHour };
       case RecurrenceType.DAYS_OF_WEEK:
-        return { recurrenceType: RecurrenceType.DAYS_OF_WEEK, daysOfWeek };
+        return { recurrenceType: RecurrenceType.DAYS_OF_WEEK, daysOfWeek, resetHour };
       case RecurrenceType.MONTHLY:
-        return { recurrenceType: RecurrenceType.MONTHLY, dayOfMonth };
+        return { recurrenceType: RecurrenceType.MONTHLY, dayOfMonth, resetHour };
       case RecurrenceType.SPECIFIC_DATE:
         return {
           recurrenceType: RecurrenceType.SPECIFIC_DATE,
@@ -1239,6 +1242,33 @@ export default function DashboardClient({
                   <option value={RecurrenceType.SPECIFIC_DATE}>Specific date</option>
                 </select>
               </div>
+
+              {recurrenceType !== RecurrenceType.NONE &&
+                recurrenceType !== RecurrenceType.SPECIFIC_DATE && (
+                <div>
+                  <label
+                    htmlFor="quest-reset-hour"
+                    className="block text-sm font-medium text-zinc-300 mb-1.5"
+                  >
+                    Reset time <span className="text-zinc-500">(when it rolls over)</span>
+                  </label>
+                  <select
+                    id="quest-reset-hour"
+                    value={resetHour ?? ''}
+                    onChange={(e) =>
+                      setResetHour(e.target.value === '' ? null : Number(e.target.value))
+                    }
+                    className="field"
+                  >
+                    <option value="">Use my default (Settings)</option>
+                    {Array.from({ length: 24 }, (_, h) => (
+                      <option key={h} value={h}>
+                        {String(h).padStart(2, '0')}:00
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              )}
 
               {recurrenceType === RecurrenceType.EVERY_N_DAYS && (
                 <div>

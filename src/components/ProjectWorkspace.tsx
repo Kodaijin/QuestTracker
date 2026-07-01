@@ -187,6 +187,8 @@ export default function ProjectWorkspace({ initialProjects, projectId, currentUs
   const [schedDaysOfWeek, setSchedDaysOfWeek] = useState<number[]>([]);
   const [schedDayOfMonth, setSchedDayOfMonth] = useState<number>(1);
   const [schedSpecificDate, setSchedSpecificDate] = useState<string>('');
+  // Per-quest reset hour override; null = follow the user's global default.
+  const [schedResetHour, setSchedResetHour] = useState<number | null>(null);
   const [schedError, setSchedError] = useState<string | null>(null);
   const [isSavingSched, startSaveSched] = useTransition();
   const [schedInitialised, setSchedInitialised] = useState(false);
@@ -237,6 +239,7 @@ export default function ProjectWorkspace({ initialProjects, projectId, currentUs
     setSchedDaysOfWeek(project.daysOfWeek ?? []);
     setSchedDayOfMonth(project.dayOfMonth ?? 1);
     setSchedSpecificDate(toDateInputValue(project.specificDate));
+    setSchedResetHour(project.resetHour ?? null);
     setSchedInitialised(true);
   }, [project, schedInitialised]);
 
@@ -646,6 +649,14 @@ export default function ProjectWorkspace({ initialProjects, projectId, currentUs
           specificDate: new Date(`${schedSpecificDate}T12:00:00`).toISOString(),
         };
         break;
+    }
+
+    // Attach the per-quest reset override to any repeating schedule (not one-offs).
+    if (
+      schedRecurrenceType !== RecurrenceType.NONE &&
+      schedRecurrenceType !== RecurrenceType.SPECIFIC_DATE
+    ) {
+      recurrencePayload.resetHour = schedResetHour;
     }
 
     const currentTitle = project.title;
@@ -1598,6 +1609,33 @@ export default function ProjectWorkspace({ initialProjects, projectId, currentUs
               <option value={RecurrenceType.SPECIFIC_DATE}>Specific date</option>
             </select>
           </div>
+
+          {schedRecurrenceType !== RecurrenceType.NONE &&
+            schedRecurrenceType !== RecurrenceType.SPECIFIC_DATE && (
+            <div>
+              <label
+                htmlFor="sched-reset-hour"
+                className="block text-sm font-medium text-zinc-300 mb-1.5"
+              >
+                Reset time <span className="text-zinc-500">(when it rolls over)</span>
+              </label>
+              <select
+                id="sched-reset-hour"
+                value={schedResetHour ?? ''}
+                onChange={(e) =>
+                  setSchedResetHour(e.target.value === '' ? null : Number(e.target.value))
+                }
+                className="field"
+              >
+                <option value="">Use my default (Settings)</option>
+                {Array.from({ length: 24 }, (_, h) => (
+                  <option key={h} value={h}>
+                    {String(h).padStart(2, '0')}:00
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
 
           {schedRecurrenceType === RecurrenceType.EVERY_N_DAYS && (
             <div>

@@ -31,6 +31,7 @@ const DEFAULT_PREFS = {
   deadline: true,
   pet: true,
   reminderHour: 18,
+  resetHour: 4,
 };
 
 /** Whole-day difference between two YYYY-MM-DD keys (a - b). */

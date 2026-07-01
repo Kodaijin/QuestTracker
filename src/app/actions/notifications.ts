@@ -131,6 +131,7 @@ export interface NotificationPrefs {
   deadline: boolean;
   pet: boolean;
   reminderHour: number;
+  resetHour: number;
 }
 
 const DEFAULT_PREFS: NotificationPrefs = {
@@ -140,6 +141,7 @@ const DEFAULT_PREFS: NotificationPrefs = {
   deadline: true,
   pet: true,
   reminderHour: 18,
+  resetHour: 4,
 };
 
 export async function getNotificationPreferences(): Promise<NotificationPrefs> {
@@ -153,6 +155,7 @@ export async function getNotificationPreferences(): Promise<NotificationPrefs> {
     deadline: pref.deadline,
     pet: pref.pet,
     reminderHour: pref.reminderHour,
+    resetHour: pref.resetHour,
   };
 }
 
@@ -163,6 +166,7 @@ const savePrefsSchema = z.object({
   deadline: z.boolean(),
   pet: z.boolean(),
   reminderHour: z.number().int().min(0).max(23),
+  resetHour: z.number().int().min(0).max(23),
 });
 
 export async function saveNotificationPreferences(

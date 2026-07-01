@@ -150,6 +150,10 @@ model NotificationPreference {
   deadline     Boolean @default(true)
   pet          Boolean @default(true)
   reminderHour Int     @default(18)
+  // Hour (0-23, local) at which repeating quests roll over / reset each day. This
+  // is the user's global default; individual quests may override via
+  // Project.resetHour. Default 4 AM so late-night activity counts for the prior day.
+  resetHour    Int     @default(4)
   user         User    @relation(fields: [userId], references: [id], onDelete: Cascade)
 }
 
@@ -196,6 +200,10 @@ model Project {
   daysOfWeek      Int[]          @default([])
   dayOfMonth      Int?
   specificDate    DateTime?
+  // Hour (0-23, local) at which this quest's day rolls over / resets. Null = use
+  // the user's global reset hour (NotificationPreference.resetHour). See
+  // src/lib/recurrence.ts for how the reset hour shifts the day boundary.
+  resetHour       Int?
   dueDate         DateTime?
   lastCompletedAt DateTime?
   availableAt     DateTime?

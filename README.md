@@ -37,7 +37,7 @@ Built with Next.js (App Router), Prisma, PostgreSQL, and NextAuth, and fully con
 - **Tags, search & filters**: tag quests for grouping, then search and filter the board by text, difficulty, or tag
 - **Achievements**: 50+ cheeky badges (including streak milestones) unlocked just by using the app, tracked per user and never revoked once earned
 - **Completion effects**: a quick sparkle and glow when you check an objective, and a "Quest Complete!" celebration when a quest is finished. On level-ups, quest completions, and companion evolutions the celebration plays as a WebGL particle burst with bloom where WebGL is available, and falls back to the CSS effect otherwise. All of it respects `prefers-reduced-motion`
-- **Recurring quests**: daily, every N days, weekly, on a set of weekdays (e.g. Mon/Wed/Fri), every N weeks, monthly, or a specific date. Elapsed quests advance automatically on load
+- **Recurring quests**: daily, every N days, weekly, on a set of weekdays (e.g. Mon/Wed/Fri), every N weeks, monthly, or a specific date. Elapsed quests advance automatically on load. A configurable **daily reset time** (global default in Settings, overridable per quest) controls when each day rolls over — e.g. 4 AM so late-night activity counts for the prior day
 - **Party & group quests** (`/party`): add allies by unique username (they accept or decline), then share a quest with chosen allies when you create it. Invited heroes accept per invite. Once joined, the party shares the same progress and every member earns XP when it's completed. Members can always check off shared progress, and the owner can let members edit the quest too (objectives, inventory, and settings) with a per-quest toggle. Only the owner can delete it, but any member can leave a shared quest from its page at any time (their past XP stays). Either ally can also remove the other at any time, which severs their shared-quest memberships in both directions. A notice badge in the nav surfaces pending ally requests and quest invites
 - **Companion pet**: adopt a companion from a wide roster (cat, dragon, fox spirit, dog, owl, penguin, unicorn, and more) on your hero page. It evolves as you level up (Egg → Hatchling → Juvenile → Adult → Mythic) and reacts to your streak with a mood, and each evolution gets its own celebration
 - **Reminders** (`/notifications`): opt-in web push notifications (delivered even when the app is closed) plus an in-app alert center for come-back nudges, streak-at-risk warnings, approaching quest deadlines, and a "your companion misses you" poke. Per-type toggles and a daily reminder time live in Settings
@@ -257,10 +257,16 @@ quest-creation logic (`createProjectForUser`) as the web UI.
 - **PushSubscription**: a browser Web Push endpoint registered by a user for notifications
 - **DeviceToken**: a native FCM token registered by the Capacitor Android app, the app-side counterpart to `PushSubscription`
 - **Notification**: in-app alert history and the source of truth for push de-duplication (unique per user + type + key)
-- **NotificationPreference**: per-user reminder toggles and the daily reminder hour
+- **NotificationPreference**: per-user reminder toggles, the daily reminder hour, and the daily reset hour (`resetHour`, default 4)
 - **CosmeticUnlock**: a cosmetic the user bought with gems (ownership only). The gem balance is derived as `earned − sum(owned prices)`, never stored as a counter. Equipped selections live on `User` (`themeId`/`xpBarId`/`frameId`/`particleId`/`backgroundId`), and the catalog and economy are code-defined in `src/lib/cosmetics.ts`. Free cosmetics (such as the default backgrounds) can be equipped without a purchase, and the per-user `cosmeticsFree` flag unlocks everything for users who opt out of the gem economy
 
 ## Changelog
+
+### 2026-07-01: Configurable daily reset time + Days-of-week are Daily
+
+- Repeating quests used to roll over at a hard-coded midnight boundary, so a quest finished late at night could reset right away. There's now a **daily reset time** (a "day" runs from the reset hour to the reset hour) that you set in **Settings → Daily reset time** (default **04:00**, so late-night activity still counts toward the previous day). Individual quests can override it with a **Reset time** picker in the New Quest form and the Schedule editor (`Project.resetHour`, null = follow the global default in `NotificationPreference.resetHour`)
+- The reset hour shifts the day boundary used by all recurrence math. `src/lib/recurrence.ts` now anchors on the *logical day* (`logicalDate`/`boundaryForDate`/`endOfLogicalDay`) and every `computeFirstDueDate` / `computeNextDueDate` / `occurrencesInRange` call passes the effective reset hour (`syncRecurringQuests`, `dismissMissedQuest`, `normaliseRecurrence`, import). Existing quests self-heal on their next roll-over — no backfill needed
+- **"Days of week" (multi-weekday) quests are now categorized as Daily**, not Weekly, since they can come due several days a week. They appear in the ☀ Daily container and their badge now reads e.g. `Mon, Wed, Fri` (`questCategory` + `recurrenceLabel` in `src/lib/recurrence.ts`)
 
 ### 2026-06-25: Skip a missed recurring quest
 
