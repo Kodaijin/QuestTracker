@@ -79,6 +79,10 @@ export async function saveDeviceToken(input: {
     create: { userId, token, platform: platform ?? 'android' },
     update: { userId },
   });
+  // Visible in the server logs so device registration can be confirmed end-to-end.
+  console.log(
+    `[push] device token saved for user ${userId} (${platform ?? 'android'}, …${token.slice(-8)})`,
+  );
   return { ok: true };
 }
 

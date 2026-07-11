@@ -18,10 +18,27 @@ export async function registerNativePush(
   if (perm.receive === 'prompt' || perm.receive === 'prompt-with-rationale') {
     perm = await PushNotifications.requestPermissions();
   }
-  if (perm.receive !== 'granted') return () => {};
+  if (perm.receive !== 'granted') {
+    // Denied → no token will ever be issued. Log so this is diagnosable via
+    // remote WebView console (chrome://inspect) / logcat.
+    console.warn('[push] notification permission not granted:', perm.receive);
+    return () => {};
+  }
 
   const registration = await PushNotifications.addListener('registration', (token) => {
-    void saveDeviceToken({ token: token.value, platform: 'android' });
+    console.log('[push] FCM token received:', `…${token.value.slice(-8)}`);
+    void saveDeviceToken({ token: token.value, platform: 'android' })
+      .then((res) => {
+        if (res.ok) console.log('[push] device token saved to server');
+        else console.warn('[push] saveDeviceToken rejected:', res.error);
+      })
+      .catch((e) => console.error('[push] saveDeviceToken threw:', e));
+  });
+
+  // Surfaces the usual native-side failures: no Google Play services, a
+  // google-services.json that doesn't match this build, or FCM being unreachable.
+  const regError = await PushNotifications.addListener('registrationError', (err) => {
+    console.error('[push] FCM registration error:', JSON.stringify(err));
   });
 
   const tap = await PushNotifications.addListener(
@@ -36,6 +53,7 @@ export async function registerNativePush(
 
   return () => {
     void registration.remove();
+    void regError.remove();
     void tap.remove();
   };
 }
