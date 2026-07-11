@@ -447,6 +447,52 @@ export async function respondToQuestInvite(input: {
     where: { projectId_userId: { projectId, userId } },
     data: { status: accept ? InviteStatus.ACCEPTED : InviteStatus.DECLINED },
   });
+
+  // Tell the quest owner (the inviter/giver) how their invite was answered:
+  // in-app alert + push (+ Discord). Best-effort — a failure here mustn't fail
+  // the response the recipient just made.
+  try {
+    const project = await prisma.project.findUnique({
+      where: { id: projectId },
+      select: {
+        userId: true,
+        title: true,
+        isGiven: true,
+        user: { select: { discordUsername: true } },
+      },
+    });
+    const responder = await prisma.user.findUnique({
+      where: { id: userId },
+      select: { username: true, name: true },
+    });
+    if (project) {
+      const who = responder?.username
+        ? `@${responder.username}`
+        : responder?.name ?? 'An ally';
+      const verb = accept ? 'accepted' : 'declined';
+      // One key per (quest, responder); cleared first so a later re-offer/response
+      // fires a fresh alert instead of being swallowed by emit's dedupe.
+      const dedupeKey = `invite-response:${projectId}:${userId}`;
+      await prisma.notification.deleteMany({
+        where: { userId: project.userId, type: 'party', dedupeKey },
+      });
+      await emit(
+        project.userId,
+        'party',
+        dedupeKey,
+        accept ? '✅ Quest accepted' : '❌ Quest declined',
+        project.isGiven
+          ? `${who} ${verb} the quest "${project.title}" you gave them.`
+          : `${who} ${verb} your invite to "${project.title}".`,
+        `/projects/${projectId}`,
+        { username: project.user.discordUsername },
+        accept ? EmbedColors.COMPLETE : EmbedColors.STREAK,
+      );
+    }
+  } catch {
+    /* ignore — the owner's notification is a best-effort side channel */
+  }
+
   return { ok: true };
 }
 

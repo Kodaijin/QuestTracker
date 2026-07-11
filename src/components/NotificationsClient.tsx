@@ -23,6 +23,7 @@ const TYPE_ICON: Record<string, string> = {
   deadline: '⏳',
   pet: '🐉',
   gift: '🎁',
+  party: '🧑‍🤝‍🧑',
 };
 
 function timeAgo(date: Date): string {
