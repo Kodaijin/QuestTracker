@@ -24,8 +24,8 @@ import { CSS } from '@dnd-kit/utilities';
 import { useProjectStore } from '@/store/useProjectStore';
 import { createProject, deleteProject, dismissMissedQuest, reorderProjects } from '@/app/actions/projects';
 import type { ProjectWithRelations } from '@/app/actions/projects';
-import { giveQuest } from '@/app/actions/party';
-import type { Ally } from '@/app/actions/party';
+import { giveQuest, respondToQuestInvite } from '@/app/actions/party';
+import type { Ally, QuestInvite } from '@/app/actions/party';
 import { recurrenceLabel, isMissed, questCategory, type QuestCategory } from '@/lib/recurrence';
 import { getQuestStatus, questProgress, type QuestStatus } from '@/lib/quest';
 import { difficultyMeta, DIFFICULTIES } from '@/lib/difficulty';
@@ -46,6 +46,7 @@ interface Props {
   currentUserId: string;
   pendingNoticeCount: number;
   allies: Ally[];
+  pendingInvites: QuestInvite[];
 }
 
 const statusCardStyles: Record<QuestStatus, string> = {
@@ -122,6 +123,7 @@ export default function DashboardClient({
   currentUserId,
   pendingNoticeCount,
   allies,
+  pendingInvites,
 }: Props) {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -146,6 +148,7 @@ export default function DashboardClient({
   const [error, setError] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
   const [isReordering, startReorder] = useTransition();
+  const [isResponding, startRespond] = useTransition();
   const [showCompleted, setShowCompleted] = useState(false);
   const [showUpcoming, setShowUpcoming] = useState(true);
 
@@ -391,6 +394,15 @@ export default function DashboardClient({
     setObjectives((prev) =>
       prev.length === 1 ? prev : prev.filter((_, i) => i !== index),
     );
+  }
+
+  function handleRespondInvite(projectId: string, accept: boolean) {
+    startRespond(async () => {
+      const res = await respondToQuestInvite({ projectId, accept });
+      // On accept the quest joins the board; either way the invite leaves the list.
+      // A refresh re-fetches both from the server.
+      if (res.ok) router.refresh();
+    });
   }
 
   function toggleMember(id: string) {
@@ -1506,6 +1518,63 @@ export default function DashboardClient({
             </form>
           </CardContent>
         </Card>
+      )}
+
+      {/* Pending quests to accept/decline — co-op invites and given quests */}
+      {pendingInvites.length > 0 && (
+        <div className="mb-6 rounded-xl border border-amber-500/30 bg-amber-950/10 p-4">
+          <h2 className="mb-3 flex items-center text-sm font-semibold text-amber-200">
+            Quests awaiting your response
+            <span className="ml-2 inline-flex items-center justify-center rounded-full bg-amber-500 text-zinc-950 text-xs font-semibold h-5 min-w-5 px-1.5">
+              {pendingInvites.length}
+            </span>
+          </h2>
+          <ul className="space-y-2">
+            {pendingInvites.map((inv) => {
+              const hero = inv.inviterUsername
+                ? `@${inv.inviterUsername}`
+                : inv.inviterName ?? 'an ally';
+              return (
+                <li
+                  key={inv.projectId}
+                  className="flex items-center justify-between gap-3 rounded-lg border border-zinc-800 bg-zinc-900/40 px-3 py-2.5"
+                >
+                  <span className="flex items-center gap-2 min-w-0">
+                    {inv.icon && (
+                      <img src={inv.icon} alt="" loading="lazy" className="h-7 w-7 object-contain flex-shrink-0" />
+                    )}
+                    <span className="min-w-0">
+                      <span className="block text-sm font-medium text-zinc-100 truncate">
+                        {inv.isGiven && '🎁 '}
+                        {inv.title}
+                      </span>
+                      <span className="block text-xs text-zinc-500 truncate">
+                        {inv.isGiven ? `${hero} gave you this quest to do` : `from ${hero}`}
+                      </span>
+                    </span>
+                  </span>
+                  <span className="flex gap-2 flex-shrink-0">
+                    <Button
+                      size="sm"
+                      onClick={() => handleRespondInvite(inv.projectId, true)}
+                      disabled={isResponding}
+                    >
+                      {inv.isGiven ? 'Accept' : 'Join'}
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      onClick={() => handleRespondInvite(inv.projectId, false)}
+                      disabled={isResponding}
+                    >
+                      Decline
+                    </Button>
+                  </span>
+                </li>
+              );
+            })}
+          </ul>
+        </div>
       )}
 
       {/* Search & filters */}
