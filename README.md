@@ -159,10 +159,24 @@ npx cap open android
 ```
 
 Notifications: the browser and PWA use Web Push, but a WebView needs native push,
-so the app uses Firebase Cloud Messaging. To enable it, create a Firebase project,
-add its `google-services.json` to `android/app/`, and set
-`FCM_SERVICE_ACCOUNT_JSON` on the server. Without it the app still works; you just
-won't get background notifications on the device. FCM is delivered as a second
+so the app uses Firebase Cloud Messaging. Enabling it takes **both** ends —
+missing either one means no device notifications (both are off by default):
+
+1. **Firebase project** — in the [Firebase console](https://console.firebase.google.com),
+   create a project and add an **Android app** with package name **`com.questtracker.app`**
+   (must match `applicationId` in `android/app/build.gradle`).
+2. **App side** — download that app's `google-services.json` into `android/app/`, then
+   **rebuild and reinstall the app** (`npx cap sync android` + a fresh build). The file is
+   compiled into the APK, so an already-installed build will never register a token until
+   you rebuild. Gradle logs `google-services.json not found… Push Notifications won't work`
+   when it's missing.
+3. **Server side** — Firebase → **Project settings → Service accounts → Generate new
+   private key**, minify the JSON to one line, and set it as `FCM_SERVICE_ACCOUNT_JSON`
+   in the environment the server actually runs in. Restart the server.
+
+Without both, the app still works; you just won't get background notifications, and the
+server logs a one-time `[fcm] … FCM_SERVICE_ACCOUNT_JSON is unset or invalid` warning if
+devices have registered but the credential is missing. FCM is delivered as a second
 channel inside `sendPushToUser`, so reminders reach web and app subscribers alike.
 
 ## Discord integration
@@ -262,6 +276,10 @@ quest-creation logic (`createProjectForUser`) as the web UI.
 - **CosmeticUnlock**: a cosmetic the user bought with gems (ownership only). The gem balance is derived as `earned − sum(owned prices)`, never stored as a counter. Equipped selections live on `User` (`themeId`/`xpBarId`/`frameId`/`particleId`/`backgroundId`), and the catalog and economy are code-defined in `src/lib/cosmetics.ts`. Free cosmetics (such as the default backgrounds) can be equipped without a purchase, and the per-user `cosmeticsFree` flag unlocks everything for users who opt out of the gem economy
 
 ## Changelog
+
+### 2026-07-11: FCM misconfiguration is no longer silent
+
+- Native (Android) push silently no-ops when `FCM_SERVICE_ACCOUNT_JSON` is unset or invalid, which made a broken setup hard to spot. `sendFcmToUser` (`src/lib/fcm.ts`) now logs a one-time warning when device tokens are registered but FCM is unconfigured, and the README's **Android app** setup is now an explicit both-ends checklist (Firebase app + `google-services.json` + rebuild + server credential). No behavior change when FCM is configured
 
 ### 2026-07-11: Give a quest to an ally
 

@@ -9,6 +9,9 @@ type Messaging = import('firebase-admin/messaging').Messaging;
 
 // undefined = not yet attempted, null = unconfigured/failed.
 let messaging: Messaging | null | undefined;
+// Guards a single "tokens exist but FCM is unconfigured" warning per process, so
+// the common silent-misconfiguration case is visible in the logs without spam.
+let warnedUnconfigured = false;
 
 /** Returns true if an FCM service account is configured. */
 export function fcmConfigured(): boolean {
@@ -46,7 +49,23 @@ export interface FcmPayload {
 /** Deliver a payload to every FCM device token a user has registered. */
 export async function sendFcmToUser(userId: string, payload: FcmPayload): Promise<void> {
   const m = await getMessaging();
-  if (!m) return;
+  if (!m) {
+    // Surface the most common cause of "Android push isn't working": device
+    // tokens are registered but FCM_SERVICE_ACCOUNT_JSON is unset or invalid, so
+    // every send silently no-ops. Warn once, only if there's actually something
+    // that would otherwise be delivered.
+    if (!warnedUnconfigured) {
+      const count = await prisma.deviceToken.count().catch(() => 0);
+      if (count > 0) {
+        warnedUnconfigured = true;
+        console.warn(
+          `[fcm] ${count} device token(s) registered but FCM_SERVICE_ACCOUNT_JSON is unset or invalid — ` +
+            'Android push is disabled. See the "Android app" section of the README.',
+        );
+      }
+    }
+    return;
+  }
 
   const tokens = await prisma.deviceToken.findMany({
     where: { userId },

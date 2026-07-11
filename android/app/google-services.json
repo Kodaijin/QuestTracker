@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "389843967762",
+    "project_id": "com-questtracker-app",
+    "storage_bucket": "com-questtracker-app.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:389843967762:android:fc59f679cbfcf435ed9dcb",
+        "android_client_info": {
+          "package_name": "com.questtracker.app"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyCRjfTKUlXb0rksThbyXq25mwo4jZdaGhg"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
