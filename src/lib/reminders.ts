@@ -52,7 +52,7 @@ function dayDiff(a: string, b: string): number {
  * row also guards a single Discord post, so a nudge never fires twice across the
  * push and Discord channels.
  */
-async function emit(
+export async function emit(
   userId: string,
   type: string,
   dedupeKey: string,

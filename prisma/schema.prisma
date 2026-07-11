@@ -223,6 +223,12 @@ model Project {
   // For shared (party) quests: whether accepted members may edit the quest
   // (add/edit objectives & inventory, change settings). Deleting stays owner-only.
   membersCanEdit  Boolean        @default(true)
+  // A "given" quest is one the owner built and handed to a single ally to do (see
+  // giveQuest in party.ts). The recipient is the sole QuestMember; they check
+  // objectives off but can't edit (membersCanEdit is forced false), while the
+  // owner keeps edit rights and watches progress. XP is split: recipient earns
+  // full, owner earns half. Distinct from a co-op shared quest.
+  isGiven         Boolean        @default(false)
   parentId        String?
   epicOrder       Int?
   user            User           @relation(fields: [userId], references: [id], onDelete: Cascade)

@@ -235,9 +235,14 @@ export default function PartyClient({
                         <img src={inv.icon} alt="" loading="lazy" className="h-7 w-7 object-contain flex-shrink-0" />
                       )}
                       <span className="min-w-0">
-                        <span className="block text-sm font-medium text-zinc-100 truncate">{inv.title}</span>
+                        <span className="block text-sm font-medium text-zinc-100 truncate">
+                          {inv.isGiven && '🎁 '}
+                          {inv.title}
+                        </span>
                         <span className="block text-xs text-zinc-500 truncate">
-                          from {heroLabel(inv.inviterUsername, inv.inviterName)}
+                          {inv.isGiven
+                            ? `${heroLabel(inv.inviterUsername, inv.inviterName)} gave you this quest to do`
+                            : `from ${heroLabel(inv.inviterUsername, inv.inviterName)}`}
                         </span>
                       </span>
                     </span>
@@ -247,7 +252,7 @@ export default function PartyClient({
                         onClick={() => handleRespondInvite(inv.projectId, true)}
                         disabled={isPending}
                       >
-                        Join
+                        {inv.isGiven ? 'Accept' : 'Join'}
                       </Button>
                       <Button
                         size="sm"

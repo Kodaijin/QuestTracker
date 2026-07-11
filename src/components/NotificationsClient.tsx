@@ -22,6 +22,7 @@ const TYPE_ICON: Record<string, string> = {
   streak: '🔥',
   deadline: '⏳',
   pet: '🐉',
+  gift: '🎁',
 };
 
 function timeAgo(date: Date): string {

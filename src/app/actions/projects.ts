@@ -118,17 +118,30 @@ async function assertCanEditQuest(projectId: string, userId: string): Promise<vo
   throw new Error('Unauthorized');
 }
 
-/** The owner plus every accepted member — i.e. who earns XP when the quest progresses. */
-async function acceptedParticipantIds(projectId: string): Promise<string[]> {
+/** A participant who earns XP when the quest progresses, plus their XP factor. */
+type XpParticipant = { userId: string; factor: number };
+
+/**
+ * The owner plus every accepted member, each with the XP factor to apply to their
+ * completion events. Co-op shared quests credit everyone in full (factor 1). A
+ * "given" quest splits it: the recipient (the accepted member) earns full XP while
+ * the owner — who handed the quest off and only watches — earns half.
+ */
+async function acceptedParticipants(projectId: string): Promise<XpParticipant[]> {
   const project = await prisma.project.findUnique({
     where: { id: projectId },
     select: {
       userId: true,
+      isGiven: true,
       members: { where: { status: InviteStatus.ACCEPTED }, select: { userId: true } },
     },
   });
   if (!project) return [];
-  return [project.userId, ...project.members.map((m) => m.userId)];
+  const ownerFactor = project.isGiven ? 0.5 : 1;
+  return [
+    { userId: project.userId, factor: ownerFactor },
+    ...project.members.map((m) => ({ userId: m.userId, factor: 1 })),
+  ];
 }
 
 /** Resolve the Discord mention strings for a set of user ids; users without a handle are skipped. */
@@ -1184,21 +1197,29 @@ export async function toggleObjective(
   const wasComplete =
     !updated.isCompleted && sibs.filter((o) => o.id !== objectiveId).every((o) => o.isCompleted);
 
-  // Shared quests credit/claw-back XP for every participant (owner + accepted members).
-  const participantIds = await acceptedParticipantIds(projectId);
+  // Shared quests credit/claw-back XP for every participant (owner + accepted
+  // members). Each carries an XP factor: 1 for co-op, but a given quest pays the
+  // recipient in full and the owner (who only watches) half.
+  const participants = await acceptedParticipants(projectId);
+  const participantIds = participants.map((p) => p.userId);
 
   if (updated.isCompleted) {
-    for (const pid of participantIds) {
-      await recordCompletionEvent(pid, CompletionType.OBJECTIVE, projectId, objectiveXp());
+    for (const p of participants) {
+      await recordCompletionEvent(
+        p.userId,
+        CompletionType.OBJECTIVE,
+        projectId,
+        Math.floor(objectiveXp() * p.factor),
+      );
     }
     // Quest just became complete → award the (difficulty-scaled) quest bonus.
     if (nowComplete) {
-      for (const pid of participantIds) {
+      for (const p of participants) {
         await recordCompletionEvent(
-          pid,
+          p.userId,
           CompletionType.QUEST,
           projectId,
-          questXp(objective.project.difficulty),
+          Math.floor(questXp(objective.project.difficulty) * p.factor),
         );
       }
       // Record the completion timestamp (set, never cleared).
@@ -1284,10 +1305,16 @@ export async function toggleInventoryItem(
     data: { gathered: !item.gathered },
   });
 
-  const participantIds = await acceptedParticipantIds(item.projectId);
+  const participants = await acceptedParticipants(item.projectId);
+  const participantIds = participants.map((p) => p.userId);
   if (updated.gathered) {
-    for (const pid of participantIds) {
-      await recordCompletionEvent(pid, CompletionType.ITEM, item.projectId, itemXp());
+    for (const p of participants) {
+      await recordCompletionEvent(
+        p.userId,
+        CompletionType.ITEM,
+        item.projectId,
+        Math.floor(itemXp() * p.factor),
+      );
     }
     // Shared quest: notify the party that an item was gathered. Best-effort.
     if (participantIds.length > 1 && discordConfigured()) {

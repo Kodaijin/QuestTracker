@@ -49,7 +49,8 @@ import {
   dismissMissedQuest,
 } from '@/app/actions/projects';
 import type { ProjectWithRelations } from '@/app/actions/projects';
-import { leaveQuest } from '@/app/actions/party';
+import { leaveQuest, giveQuest } from '@/app/actions/party';
+import type { Ally } from '@/app/actions/party';
 import { recurrenceLabel, isMissed } from '@/lib/recurrence';
 import { deadlineCountdown, isUpcoming, formatActivatesIn } from '@/lib/timing';
 import {
@@ -75,6 +76,7 @@ interface Props {
   initialProjects: ProjectWithRelations[];
   projectId: string;
   currentUserId: string;
+  allies: Ally[];
 }
 
 const WEEKDAY_OPTIONS = [
@@ -131,7 +133,7 @@ function SortableRow({
   );
 }
 
-export default function ProjectWorkspace({ initialProjects, projectId, currentUserId }: Props) {
+export default function ProjectWorkspace({ initialProjects, projectId, currentUserId, allies }: Props) {
   const router = useRouter();
   const hydrate = useProjectStore((s) => s.hydrate);
   const storeProjects = useProjectStore((s) => s.projects);
@@ -212,6 +214,9 @@ export default function ProjectWorkspace({ initialProjects, projectId, currentUs
   const [isLeaving, startLeave] = useTransition();
   const [isDismissing, startDismiss] = useTransition();
   const [leaveError, setLeaveError] = useState<string | null>(null);
+  const [giftTarget, setGiftTarget] = useState('');
+  const [isGifting, startGift] = useTransition();
+  const [giftError, setGiftError] = useState<string | null>(null);
   const [isMutatingObj, startMutateObj] = useTransition();
   const [isMutatingItem, startMutateItem] = useTransition();
   const [isSavingSeqObj, startSaveSeqObj] = useTransition();
@@ -250,10 +255,23 @@ export default function ProjectWorkspace({ initialProjects, projectId, currentUs
   // non-owner here is always an accepted member.
   const isOwner = project.userId === currentUserId;
   const acceptedMembers = (project.members ?? []).filter((m) => m.status === 'ACCEPTED');
-  const isSharedQuest = (project.members ?? []).length > 0;
+  // A member who hasn't declined — i.e. the quest is actively shared/given right now.
+  const activeMembers = (project.members ?? []).filter((m) => m.status !== 'DECLINED');
+  const isSharedQuest = activeMembers.length > 0;
   // Owner always; members only when the owner allows it. Checking progress off is
   // always allowed (handled separately) — this gates structural edits & settings.
   const canEdit = isOwner || project.membersCanEdit;
+
+  // A "given" quest was built by the owner and handed to one ally to do: the
+  // recipient checks objectives off (but can't edit), the owner keeps editing and
+  // watches, and XP is split (recipient full, owner half). Distinct from co-op.
+  const isGiven = project.isGiven;
+  const givenRecipient = isGiven ? activeMembers[0] : undefined;
+  const isGivenQuest = isGiven && !!givenRecipient;
+  const isCoopQuest = isSharedQuest && !isGiven;
+  // The owner may hand off a standalone quest that isn't already shared/given.
+  const canGiveAway =
+    isOwner && !project.isEpic && project.parentId == null && !isSharedQuest;
 
   // ── Hierarchy: epic / sub-quest / standalone ────────────────────────────────────
   const isEpic = project.isEpic;
@@ -419,6 +437,28 @@ export default function ProjectWorkspace({ initialProjects, projectId, currentUs
         router.refresh();
       } else {
         setLeaveError(res.error);
+      }
+    });
+  }
+
+  function handleGiveQuest() {
+    if (!giftTarget) return;
+    const ally = allies.find((a) => a.userId === giftTarget);
+    const who = ally?.username ?? ally?.name ?? 'this ally';
+    if (
+      !window.confirm(
+        `Give "${project?.title}" to ${who}? They'll do it (checking objectives off) while you keep editing and watch their progress. They earn full XP, you earn half.`,
+      )
+    )
+      return;
+    setGiftError(null);
+    startGift(async () => {
+      const res = await giveQuest({ projectId, userId: giftTarget });
+      if (res.ok) {
+        setGiftTarget('');
+        router.refresh();
+      } else {
+        setGiftError(res.error);
       }
     });
   }
@@ -1326,8 +1366,87 @@ export default function ProjectWorkspace({ initialProjects, projectId, currentUs
         </div>
       </div>
 
-      {/* Party (shared quests) — members + owner's edit-permission toggle */}
-      {isSharedQuest && (
+      {/* Give this quest away — owner hands a standalone quest to one ally to do. */}
+      {canGiveAway && allies.length > 0 && (
+        <Card>
+          <CardHeader>
+            <CardTitle>🎁 Give this quest</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            <p className="text-sm text-zinc-400">
+              Hand this quest to an ally to do. They check the objectives off and earn full XP;
+              you keep editing it and watch their progress, earning half XP. They&apos;ll accept it
+              on their Party page.
+            </p>
+            <div className="flex flex-wrap items-center gap-2">
+              <select
+                value={giftTarget}
+                onChange={(e) => setGiftTarget(e.target.value)}
+                className="field"
+                disabled={isGifting}
+                aria-label="Choose an ally to give this quest to"
+              >
+                <option value="">Choose an ally…</option>
+                {allies.map((a) => (
+                  <option key={a.userId} value={a.userId}>
+                    {a.username ?? a.name ?? 'Ally'}
+                  </option>
+                ))}
+              </select>
+              <Button size="sm" onClick={handleGiveQuest} disabled={!giftTarget || isGifting}>
+                {isGifting ? 'Giving…' : 'Give quest'}
+              </Button>
+            </div>
+            {giftError && <p className="text-sm text-red-400">{giftError}</p>}
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Given quest — owner watches, recipient does the work (can't edit). */}
+      {isGivenQuest && (
+        <Card>
+          <CardHeader>
+            <CardTitle>🎁 Given quest</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            {isOwner ? (
+              <p className="text-sm text-zinc-400">
+                You gave this quest to{' '}
+                <span className="text-zinc-200">
+                  {givenRecipient!.user.username ?? givenRecipient!.user.name ?? 'an ally'}
+                </span>
+                .{' '}
+                {givenRecipient!.status === 'ACCEPTED'
+                  ? 'They’re working on it — you can still edit it and watch their progress above. They earn full XP; you earn half.'
+                  : 'Waiting for them to accept it on their Party page.'}
+              </p>
+            ) : (
+              <>
+                <p className="text-sm text-zinc-400">
+                  This quest was given to you to do. Check the objectives off to complete it — you
+                  earn full XP. You can’t edit it; only the giver can change its objectives and
+                  settings.
+                </p>
+                <div className="pt-1">
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={handleLeaveQuest}
+                    disabled={isLeaving}
+                    className="text-red-400 hover:text-red-300"
+                  >
+                    {isLeaving ? 'Leaving…' : 'Give it back'}
+                  </Button>
+                  {leaveError && <p className="mt-1 text-sm text-red-400">{leaveError}</p>}
+                </div>
+              </>
+            )}
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Party (co-op shared quests) — members + owner's edit-permission toggle */}
+      {isCoopQuest && (
         <Card>
           <CardHeader>
             <CardTitle>

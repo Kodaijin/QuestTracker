@@ -17,6 +17,7 @@ import {
   sendDiscordEmbed,
   EmbedColors,
 } from '@/lib/discord';
+import { emit } from '@/lib/reminders';
 
 // ── Session guard ───────────────────────────────────────────────────────────
 
@@ -24,6 +25,18 @@ async function requireUserId(): Promise<string> {
   const session = await getServerSession(authOptions);
   if (!session?.user?.id) throw new Error('Unauthorized');
   return session.user.id;
+}
+
+/** Ids of the user's accepted connections (allies), usable as quest invitees/recipients. */
+async function acceptedAllyIds(userId: string): Promise<Set<string>> {
+  const connections = await prisma.connection.findMany({
+    where: {
+      status: InviteStatus.ACCEPTED,
+      OR: [{ requesterId: userId }, { addresseeId: userId }],
+    },
+    select: { requesterId: true, addresseeId: true },
+  });
+  return new Set(connections.map((c) => (c.requesterId === userId ? c.addresseeId : c.requesterId)));
 }
 
 // ── Return types ──────────────────────────────────────────────────────────────
@@ -51,6 +64,9 @@ export type QuestInvite = {
   icon: string | null;
   inviterUsername: string | null;
   inviterName: string | null;
+  // A "given" quest was handed to you to do (you check off, can't edit), rather
+  // than a co-op quest you'd share progress on. Drives the Party-page copy.
+  isGiven: boolean;
 };
 
 // ── Connections ─────────────────────────────────────────────────────────────
@@ -260,17 +276,7 @@ export async function inviteToQuest(input: {
   if (project.isEpic) return { ok: false, error: 'Epic quests cannot be shared yet.' };
 
   // Every invitee must be an accepted connection of the owner.
-  const allyIds = new Set(
-    (
-      await prisma.connection.findMany({
-        where: {
-          status: InviteStatus.ACCEPTED,
-          OR: [{ requesterId: userId }, { addresseeId: userId }],
-        },
-        select: { requesterId: true, addresseeId: true },
-      })
-    ).map((c) => (c.requesterId === userId ? c.addresseeId : c.requesterId)),
-  );
+  const allyIds = await acceptedAllyIds(userId);
 
   const valid = userIds.filter((id) => allyIds.has(id) && id !== userId);
   if (valid.length === 0) return { ok: false, error: 'No valid allies to invite.' };
@@ -310,6 +316,103 @@ export async function inviteToQuest(input: {
     } catch {
       /* ignore — Discord is a non-critical side channel */
     }
+  }
+
+  return { ok: true };
+}
+
+const giveQuestSchema = z.object({
+  projectId: z.string().min(1),
+  userId: z.string().min(1),
+});
+
+/**
+ * Hand a quest you built to a single ally to *do*. Unlike a co-op share, the
+ * recipient works the quest but can't edit it (membersCanEdit is forced off) while
+ * you keep edit rights and watch their progress; XP is split (recipient full, you
+ * half — see acceptedParticipants in projects.ts). The recipient accepts/declines
+ * on their Party page via respondToQuestInvite, exactly like a co-op invite.
+ */
+export async function giveQuest(input: {
+  projectId: string;
+  userId: string;
+}): Promise<PartyActionResult> {
+  const parsed = giveQuestSchema.safeParse(input);
+  if (!parsed.success) {
+    return { ok: false, error: parsed.error.issues[0]?.message ?? 'Invalid input' };
+  }
+
+  const giverId = await requireUserId();
+  const { projectId, userId: recipientId } = parsed.data;
+
+  if (recipientId === giverId) {
+    return { ok: false, error: "You can't give a quest to yourself." };
+  }
+
+  const project = await prisma.project.findUnique({
+    where: { id: projectId },
+    select: {
+      userId: true,
+      isEpic: true,
+      title: true,
+      members: { select: { status: true } },
+      user: { select: { username: true, name: true } },
+    },
+  });
+  if (!project) return { ok: false, error: 'Quest not found.' };
+  if (project.userId !== giverId) {
+    return { ok: false, error: 'Only the quest owner can give it away.' };
+  }
+  if (project.isEpic) return { ok: false, error: 'Epic quests cannot be given.' };
+  // Already handed to / shared with someone who hasn't declined.
+  if (project.members.some((m) => m.status !== InviteStatus.DECLINED)) {
+    return { ok: false, error: 'This quest is already shared or given to someone.' };
+  }
+
+  // The recipient must be an accepted ally.
+  const allyIds = await acceptedAllyIds(giverId);
+  if (!allyIds.has(recipientId)) {
+    return { ok: false, error: 'You can only give quests to your allies.' };
+  }
+
+  await prisma.$transaction([
+    prisma.project.update({
+      where: { id: projectId },
+      data: { isGiven: true, membersCanEdit: false },
+    }),
+    prisma.questMember.upsert({
+      where: { projectId_userId: { projectId, userId: recipientId } },
+      create: { projectId, userId: recipientId, status: InviteStatus.PENDING },
+      update: { status: InviteStatus.PENDING }, // reset a prior decline so it can be re-offered
+    }),
+  ]);
+
+  // Notify the recipient: in-app alert + push (+ Discord if configured). The alert
+  // links to /party, where they can accept it (they can't open the quest until they do).
+  const giverName = project.user.username ?? project.user.name ?? 'An ally';
+  const dedupeKey = `gift:${projectId}:${recipientId}`;
+  const recipient = await prisma.user.findUnique({
+    where: { id: recipientId },
+    select: { discordUsername: true },
+  });
+  try {
+    // Clear any prior gift alert for this pair so a re-give (after a decline) fires
+    // a fresh notification instead of being swallowed by emit's dedupe.
+    await prisma.notification.deleteMany({
+      where: { userId: recipientId, type: 'gift', dedupeKey },
+    });
+    await emit(
+      recipientId,
+      'gift',
+      dedupeKey,
+      '🎁 A quest for you',
+      `${giverName} gave you the quest "${project.title}". Accept it on your Party page to take it on.`,
+      '/party',
+      { username: recipient?.discordUsername ?? null },
+      EmbedColors.INVITE,
+    );
+  } catch {
+    /* ignore — notification/push is a best-effort side channel */
   }
 
   return { ok: true };
@@ -399,6 +502,7 @@ export async function listQuestInvites(): Promise<QuestInvite[]> {
           id: true,
           title: true,
           icon: true,
+          isGiven: true,
           user: { select: { username: true, name: true } },
         },
       },
@@ -412,6 +516,7 @@ export async function listQuestInvites(): Promise<QuestInvite[]> {
     icon: i.project.icon,
     inviterUsername: i.project.user.username,
     inviterName: i.project.user.name,
+    isGiven: i.project.isGiven,
   }));
 }
 
