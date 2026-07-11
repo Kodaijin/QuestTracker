@@ -24,6 +24,7 @@ import { CSS } from '@dnd-kit/utilities';
 import { useProjectStore } from '@/store/useProjectStore';
 import { createProject, deleteProject, dismissMissedQuest, reorderProjects } from '@/app/actions/projects';
 import type { ProjectWithRelations } from '@/app/actions/projects';
+import { giveQuest } from '@/app/actions/party';
 import type { Ally } from '@/app/actions/party';
 import { recurrenceLabel, isMissed, questCategory, type QuestCategory } from '@/lib/recurrence';
 import { getQuestStatus, questProgress, type QuestStatus } from '@/lib/quest';
@@ -156,6 +157,9 @@ export default function DashboardClient({
   // ── Party sharing state ───────────────────────────────────────────────────────
   const [selectedMemberIds, setSelectedMemberIds] = useState<string[]>([]);
   const [membersCanEdit, setMembersCanEdit] = useState(true);
+  // Party section mode: co-op (share progress) vs give (hand it to one ally to do).
+  const [partyMode, setPartyMode] = useState<'coop' | 'give'>('coop');
+  const [giveToId, setGiveToId] = useState('');
 
   // ── Epic state ──────────────────────────────────────────────────────────────
   const [isEpic, setIsEpic] = useState(false);
@@ -255,6 +259,8 @@ export default function DashboardClient({
     setShowForm(false);
     setSelectedMemberIds([]);
     setMembersCanEdit(true);
+    setPartyMode('coop');
+    setGiveToId('');
     setIsEpic(false);
     setSequential(false);
     setSubQuests(['']);
@@ -321,9 +327,13 @@ export default function DashboardClient({
 
     const recurrencePayload = buildRecurrencePayload();
 
+    // Giving hands the quest to one ally to do (solo, no co-op members); a plain
+    // co-op share passes the selected member ids instead.
+    const giving = partyMode === 'give' && !!giveToId;
+
     startTransition(async () => {
       try {
-        await createProject({
+        const created = await createProject({
           title: trimmedTitle,
           description: description.trim() || undefined,
           objectives: trimmedObjectives,
@@ -334,10 +344,19 @@ export default function DashboardClient({
           tags,
           availableAt: buildAvailableAtISO(),
           deadline: buildDeadlineISO(),
-          memberIds: selectedMemberIds,
+          memberIds: partyMode === 'give' ? [] : selectedMemberIds,
           membersCanEdit,
           ...recurrencePayload,
         });
+        if (giving) {
+          const res = await giveQuest({ projectId: created.id, userId: giveToId });
+          if (!res.ok) {
+            // The quest was created; only the hand-off failed. Surface why.
+            setError(res.error);
+            router.refresh();
+            return;
+          }
+        }
         resetForm();
         router.refresh();
       } catch (err) {
@@ -1041,54 +1060,99 @@ export default function DashboardClient({
                 </Button>
               </div>
 
-              {/* Share with party (accepted allies only) */}
+              {/* Party (accepted allies only): share co-op, or give to one ally to do */}
               {allies.length > 0 && (
                 <div>
                   <label className="block text-sm font-medium text-zinc-300 mb-1.5">
-                    Share with party <span className="text-zinc-500">(optional — make this a group quest)</span>
+                    Party <span className="text-zinc-500">(optional)</span>
                   </label>
-                  <div className="flex flex-wrap gap-2">
-                    {allies.map((a) => {
-                      const selected = selectedMemberIds.includes(a.userId);
-                      const label = a.username ? `@${a.username}` : a.name ?? 'ally';
-                      return (
-                        <button
-                          key={a.userId}
-                          type="button"
-                          onClick={() => toggleMember(a.userId)}
-                          aria-pressed={selected}
-                          className={cn(
-                            'inline-flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-sm font-medium transition-all',
-                            selected
-                              ? 'border-emerald-500/60 bg-emerald-950/40 text-emerald-200'
-                              : 'border-zinc-700 bg-zinc-800/50 text-zinc-400 hover:text-zinc-200',
-                          )}
-                        >
-                          {selected && <span aria-hidden>✓</span>}
-                          {label}
-                        </button>
-                      );
-                    })}
+                  <div className="inline-flex rounded-lg border border-zinc-700 bg-zinc-800/50 p-0.5 mb-3">
+                    {([
+                      ['coop', '🧑‍🤝‍🧑 Share (co-op)'],
+                      ['give', '🎁 Give to an ally'],
+                    ] as const).map(([mode, label]) => (
+                      <button
+                        key={mode}
+                        type="button"
+                        onClick={() => setPartyMode(mode)}
+                        aria-pressed={partyMode === mode}
+                        className={cn(
+                          'rounded-md px-3 py-1.5 text-sm font-medium transition-all',
+                          partyMode === mode
+                            ? 'bg-emerald-950/60 text-emerald-200'
+                            : 'text-zinc-400 hover:text-zinc-200',
+                        )}
+                      >
+                        {label}
+                      </button>
+                    ))}
                   </div>
-                  <p className="mt-1.5 text-xs text-zinc-500">
-                    Invited allies must accept on their <span className="text-zinc-400">Party</span> page before the quest appears on their board.
-                  </p>
 
-                  {selectedMemberIds.length > 0 && (
-                    <label className="mt-3 flex items-start gap-2 cursor-pointer">
-                      <input
-                        type="checkbox"
-                        checked={membersCanEdit}
-                        onChange={(e) => setMembersCanEdit(e.target.checked)}
-                        className="mt-0.5 h-4 w-4 rounded border-zinc-600 bg-zinc-800 text-emerald-500 focus:ring-emerald-500/40"
-                      />
-                      <span className="text-sm text-zinc-300">
-                        Let party members edit this quest
-                        <span className="block text-xs text-zinc-500">
-                          Members can add and edit objectives, inventory, and settings. They can always check off progress; only you can delete the quest.
-                        </span>
-                      </span>
-                    </label>
+                  {partyMode === 'coop' ? (
+                    <>
+                      <div className="flex flex-wrap gap-2">
+                        {allies.map((a) => {
+                          const selected = selectedMemberIds.includes(a.userId);
+                          const label = a.username ? `@${a.username}` : a.name ?? 'ally';
+                          return (
+                            <button
+                              key={a.userId}
+                              type="button"
+                              onClick={() => toggleMember(a.userId)}
+                              aria-pressed={selected}
+                              className={cn(
+                                'inline-flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-sm font-medium transition-all',
+                                selected
+                                  ? 'border-emerald-500/60 bg-emerald-950/40 text-emerald-200'
+                                  : 'border-zinc-700 bg-zinc-800/50 text-zinc-400 hover:text-zinc-200',
+                              )}
+                            >
+                              {selected && <span aria-hidden>✓</span>}
+                              {label}
+                            </button>
+                          );
+                        })}
+                      </div>
+                      <p className="mt-1.5 text-xs text-zinc-500">
+                        Invited allies must accept on their <span className="text-zinc-400">Party</span> page before the quest appears on their board.
+                      </p>
+
+                      {selectedMemberIds.length > 0 && (
+                        <label className="mt-3 flex items-start gap-2 cursor-pointer">
+                          <input
+                            type="checkbox"
+                            checked={membersCanEdit}
+                            onChange={(e) => setMembersCanEdit(e.target.checked)}
+                            className="mt-0.5 h-4 w-4 rounded border-zinc-600 bg-zinc-800 text-emerald-500 focus:ring-emerald-500/40"
+                          />
+                          <span className="text-sm text-zinc-300">
+                            Let party members edit this quest
+                            <span className="block text-xs text-zinc-500">
+                              Members can add and edit objectives, inventory, and settings. They can always check off progress; only you can delete the quest.
+                            </span>
+                          </span>
+                        </label>
+                      )}
+                    </>
+                  ) : (
+                    <>
+                      <select
+                        value={giveToId}
+                        onChange={(e) => setGiveToId(e.target.value)}
+                        className="field"
+                        aria-label="Choose an ally to give this quest to"
+                      >
+                        <option value="">Choose an ally…</option>
+                        {allies.map((a) => (
+                          <option key={a.userId} value={a.userId}>
+                            {a.username ? `@${a.username}` : a.name ?? 'ally'}
+                          </option>
+                        ))}
+                      </select>
+                      <p className="mt-1.5 text-xs text-zinc-500">
+                        They&apos;ll do this quest (checking objectives off) but can&apos;t edit it — you keep editing and watch their progress. Rewards split: they earn full XP, you earn half. They accept on their <span className="text-zinc-400">Party</span> page.
+                      </p>
+                    </>
                   )}
                 </div>
               )}
