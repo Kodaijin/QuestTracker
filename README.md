@@ -277,6 +277,10 @@ quest-creation logic (`createProjectForUser`) as the web UI.
 
 ## Changelog
 
+### 2026-07-11: Android app icon
+
+- Replaced the default Capacitor launcher icon with the QuestTracker crest. Source art lives in `assets/` (`icon-only.png` full-bleed, `icon-foreground.png` for the adaptive foreground); all densities + adaptive layers were generated with `npx @capacitor/assets generate --android --iconBackgroundColor '#000000'`, which writes into `android/app/src/main/res/mipmap-*`. Re-run that command after changing the source art. Requires an APK rebuild to take effect.
+
 ### 2026-07-11: Android push — load the server as the app origin
 
 - **Root cause of Android push never registering:** the app loaded the server by JS-navigating the WebView from the bundled launcher to the remote URL, which Capacitor treats as an *external* origin and does **not** expose native plugins to (`Capacitor.PluginHeaders` was `undefined` on the page, so `PushNotifications` reported "not implemented on android" and no FCM token was ever requested).
