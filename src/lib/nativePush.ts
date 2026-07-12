@@ -2,6 +2,7 @@
 // client NativeBridge, and only invoked when running natively. Requests
 // permission, persists the FCM token via a Server Action, and routes taps.
 
+import { Capacitor } from '@capacitor/core';
 import { saveDeviceToken } from '@/app/actions/notifications';
 
 /**
@@ -12,6 +13,22 @@ import { saveDeviceToken } from '@/app/actions/notifications';
 export async function registerNativePush(
   onTap: (href: string) => void,
 ): Promise<() => void> {
+  // Diagnostic: dump what the Capacitor bridge actually exposes on THIS page. When
+  // the app is loaded from a remote origin, this reveals whether the native plugin
+  // registry (PluginHeaders) reached the page at all, and whether PushNotifications
+  // specifically is in it. Temporary — remove once push is confirmed working.
+  const cap = Capacitor as unknown as {
+    getPlatform(): string;
+    isNativePlatform(): boolean;
+    isPluginAvailable(name: string): boolean;
+    PluginHeaders?: Array<{ name: string }>;
+  };
+  console.log(
+    `[push] bridge check — platform=${cap.getPlatform?.()} native=${cap.isNativePlatform?.()} ` +
+      `pushAvailable=${cap.isPluginAvailable?.('PushNotifications')} ` +
+      `plugins=${JSON.stringify(cap.PluginHeaders?.map((p) => p.name) ?? 'undefined')}`,
+  );
+
   try {
     const { PushNotifications } = await import('@capacitor/push-notifications');
 
