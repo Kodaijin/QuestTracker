@@ -1,11 +1,19 @@
 import type { CapacitorConfig } from '@capacitor/cli';
 
 /**
- * Capacitor wraps the existing web app in a native shell. The bundled `webDir`
- * is just a small launcher (native/launcher) that asks for the server URL and
- * then navigates the WebView to that live QuestTracker instance. `allowNavigation`
- * lets the WebView load any user-entered host. The launcher itself is served at
- * the local origin `https://localhost`.
+ * Capacitor wraps the existing web app in a native shell.
+ *
+ * `server.url` loads the QuestTracker instance directly AS the app origin, which
+ * is what makes Capacitor inject its native plugin bridge (PluginHeaders) into the
+ * page — required for native plugins like Push Notifications to work. Loading the
+ * server by JS-navigating from the bundled launcher instead leaves it an "external"
+ * origin that Capacitor does NOT expose plugins to (PluginHeaders is undefined), so
+ * push never registers.
+ *
+ * Trade-off: this hardwires the app to one server, so the `native/launcher`
+ * server-picker is bypassed. To restore the multi-server picker, remove `url`
+ * below (the app falls back to loading `webDir`) — but note native push won't work
+ * on the picker-navigated origin.
  */
 const config: CapacitorConfig = {
   appId: 'com.questtracker.app',
@@ -13,6 +21,8 @@ const config: CapacitorConfig = {
   webDir: 'native/launcher',
   server: {
     androidScheme: 'https',
+    url: 'https://questtracker.k0d4.cloud',
+    cleartext: false,
     allowNavigation: ['*'],
   },
 };

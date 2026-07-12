@@ -277,6 +277,12 @@ quest-creation logic (`createProjectForUser`) as the web UI.
 
 ## Changelog
 
+### 2026-07-11: Android push — load the server as the app origin
+
+- **Root cause of Android push never registering:** the app loaded the server by JS-navigating the WebView from the bundled launcher to the remote URL, which Capacitor treats as an *external* origin and does **not** expose native plugins to (`Capacitor.PluginHeaders` was `undefined` on the page, so `PushNotifications` reported "not implemented on android" and no FCM token was ever requested).
+- **Fix:** `capacitor.config.ts` now sets `server.url` to the QuestTracker instance so Capacitor loads it *as* the app origin and injects the plugin bridge. Trade-off: this hardwires the app to one server (the `native/launcher` picker is bypassed); remove `server.url` to restore the picker, at the cost of native push. Requires an APK rebuild + reinstall.
+- Added a temporary `[push] bridge check …` diagnostic in `registerNativePush` that logs the exposed plugin list — how the above was pinpointed.
+
 ### 2026-07-11: FCM misconfiguration is no longer silent
 
 - Native (Android) push silently no-ops when `FCM_SERVICE_ACCOUNT_JSON` is unset or invalid, which made a broken setup hard to spot. `sendFcmToUser` (`src/lib/fcm.ts`) now logs a one-time warning when device tokens are registered but FCM is unconfigured, and the README's **Android app** setup is now an explicit both-ends checklist (Firebase app + `google-services.json` + rebuild + server credential). No behavior change when FCM is configured

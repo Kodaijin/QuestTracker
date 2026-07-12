@@ -59,6 +59,16 @@ export async function registerNativePush(
       console.error('[push] FCM registration error:', JSON.stringify(err));
     });
 
+    // Fired when a push arrives while the app is in the FOREGROUND — Android hands
+    // it to the app instead of showing a tray notification. Logging it distinguishes
+    // "delivered but not shown" from "never delivered" during testing.
+    const received = await PushNotifications.addListener(
+      'pushNotificationReceived',
+      (notif) => {
+        console.log('[push] notification received (foreground):', notif.title ?? '(no title)');
+      },
+    );
+
     const tap = await PushNotifications.addListener(
       'pushNotificationActionPerformed',
       (action) => {
@@ -72,6 +82,7 @@ export async function registerNativePush(
     return () => {
       void registration.remove();
       void regError.remove();
+      void received.remove();
       void tap.remove();
     };
   } catch (e) {

@@ -71,19 +71,29 @@ export async function sendFcmToUser(userId: string, payload: FcmPayload): Promis
     where: { userId },
     select: { id: true, token: true },
   });
-  if (tokens.length === 0) return;
+  if (tokens.length === 0) {
+    console.log(`[fcm] no device tokens for user ${userId} — nothing to send`);
+    return;
+  }
 
   await Promise.all(
     tokens.map(async (t) => {
       try {
-        await m.send({
+        const id = await m.send({
           token: t.token,
           notification: { title: payload.title, body: payload.body },
           data: { href: payload.href ?? '/', ...(payload.tag ? { tag: payload.tag } : {}) },
           android: { priority: 'high', ...(payload.tag ? { collapseKey: payload.tag } : {}) },
         });
+        // Temporary diagnostic: confirms FCM accepted the message for delivery.
+        console.log(`[fcm] sent to …${t.token.slice(-8)} → ${id}`);
       } catch (e) {
         const code = (e as { code?: string })?.code ?? '';
+        const message = (e as { message?: string })?.message ?? String(e);
+        // Temporary diagnostic: the exact reason a send was rejected. Common ones:
+        //   messaging/mismatched-credential → service account is from a different
+        //   Firebase project than the token's google-services.json.
+        console.warn(`[fcm] send failed for …${t.token.slice(-8)}: ${code} — ${message}`);
         // Token no longer valid → drop it.
         if (
           code.includes('registration-token-not-registered') ||
