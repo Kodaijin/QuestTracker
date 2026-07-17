@@ -1,7 +1,7 @@
 import { redirect } from 'next/navigation';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
-import { getProjectsForUser, syncRecurringQuests } from '@/app/actions/projects';
+import { getMyResetHour, getProjectsForUser, syncRecurringQuests } from '@/app/actions/projects';
 import { getPendingNoticeCount, listConnections, listQuestInvites } from '@/app/actions/party';
 import DashboardClient from '@/components/DashboardClient';
 
@@ -14,10 +14,11 @@ export default async function DashboardPage() {
     .catch(() => redirect('/login'));
 
   const session = await getServerSession(authOptions);
-  const [pendingNoticeCount, allies, pendingInvites] = await Promise.all([
+  const [pendingNoticeCount, allies, pendingInvites, resetHour] = await Promise.all([
     getPendingNoticeCount(),
     listConnections(),
     listQuestInvites(),
+    getMyResetHour(),
   ]);
 
   return (
@@ -27,6 +28,7 @@ export default async function DashboardPage() {
       pendingNoticeCount={pendingNoticeCount}
       allies={allies}
       pendingInvites={pendingInvites}
+      userResetHour={resetHour}
     />
   );
 }

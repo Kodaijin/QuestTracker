@@ -46,12 +46,12 @@ import {
   setQuestTiming,
   setMemberPermissions,
   deleteProject,
-  dismissMissedQuest,
+  skipQuestToday,
 } from '@/app/actions/projects';
 import type { ProjectWithRelations } from '@/app/actions/projects';
 import { leaveQuest, giveQuest } from '@/app/actions/party';
 import type { Ally } from '@/app/actions/party';
-import { recurrenceLabel, isMissed } from '@/lib/recurrence';
+import { recurrenceLabel, isMissed, endOfLogicalDay } from '@/lib/recurrence';
 import { deadlineCountdown, isUpcoming, formatActivatesIn } from '@/lib/timing';
 import {
   getChildren,
@@ -70,6 +70,7 @@ import { cn } from '@/lib/utils';
 import IconPicker from '@/components/IconPicker';
 import LogoutButton from '@/components/LogoutButton';
 import ProgressionHeader from '@/components/ProgressionHeader';
+import ConfirmDialog from '@/components/ConfirmDialog';
 import { SparkleBurst, QuestCompleteEffect } from '@/components/QuestEffects';
 
 interface Props {
@@ -77,6 +78,7 @@ interface Props {
   projectId: string;
   currentUserId: string;
   allies: Ally[];
+  resetHour: number;
 }
 
 const WEEKDAY_OPTIONS = [
@@ -133,7 +135,7 @@ function SortableRow({
   );
 }
 
-export default function ProjectWorkspace({ initialProjects, projectId, currentUserId, allies }: Props) {
+export default function ProjectWorkspace({ initialProjects, projectId, currentUserId, allies, resetHour }: Props) {
   const router = useRouter();
   const hydrate = useProjectStore((s) => s.hydrate);
   const storeProjects = useProjectStore((s) => s.projects);
@@ -212,7 +214,11 @@ export default function ProjectWorkspace({ initialProjects, projectId, currentUs
   const [isSavingTiming, startSaveTiming] = useTransition();
   const [isSavingPerms, startSavePerms] = useTransition();
   const [isLeaving, startLeave] = useTransition();
-  const [isDismissing, startDismiss] = useTransition();
+  const [isSkipping, startDismiss] = useTransition();
+  const [isDeleting, startDelete] = useTransition();
+  // Quest or sub-quest pending deletion, shown in the confirm dialog.
+  const [pendingDelete, setPendingDelete] =
+    useState<{ id: string; title: string; kind: 'project' | 'subquest' } | null>(null);
   const [leaveError, setLeaveError] = useState<string | null>(null);
   const [giftTarget, setGiftTarget] = useState('');
   const [isGifting, startGift] = useTransition();
@@ -310,18 +316,23 @@ export default function ProjectWorkspace({ initialProjects, projectId, currentUs
     ? null
     : deadlineCountdown(project.deadline, timingNow, questComplete);
 
-  const canSkipMissed =
-    missed &&
+  // Whether this repeating quest can be skipped for today — due today (or overdue),
+  // not a one-off/specific-date, and not already finished this cycle.
+  const canSkipToday =
     project.recurrenceType !== RecurrenceType.NONE &&
-    project.recurrenceType !== RecurrenceType.SPECIFIC_DATE;
+    project.recurrenceType !== RecurrenceType.SPECIFIC_DATE &&
+    project.dueDate != null &&
+    !questComplete &&
+    new Date(project.dueDate) <= endOfLogicalDay(new Date(), project.resetHour ?? resetHour);
 
-  // Skip a missed recurring quest: drop the overdue cycle (no XP) and resume the
-  // schedule at the current occurrence. A refresh re-runs syncRecurringQuests.
-  const dismissProjectId = project.id;
-  function handleDismissMissed() {
+  // Skip today's occurrence of a repeating quest: drop the current (and any
+  // overdue) cycle with no XP and advance to the next scheduled day. A refresh
+  // re-runs syncRecurringQuests.
+  const skipProjectId = project.id;
+  function handleSkipToday() {
     startDismiss(async () => {
       try {
-        await dismissMissedQuest({ projectId: dismissProjectId });
+        await skipQuestToday({ projectId: skipProjectId });
         router.refresh();
       } catch {
         /* best-effort; a refresh will resync the quest */
@@ -848,14 +859,33 @@ export default function ProjectWorkspace({ initialProjects, projectId, currentUs
     });
   }
 
-  async function handleDeleteSubQuest(subQuestId: string, subTitle: string) {
-    if (!window.confirm(`Delete sub-quest "${subTitle}"? This cannot be undone.`)) return;
-    const saved = optimisticDeleteProj(subQuestId);
-    try {
-      await deleteProject({ projectId: subQuestId });
-      router.refresh();
-    } catch {
-      if (saved) rollbackDeleteProj(saved);
+  // Run the pending deletion once confirmed in the dialog. A sub-quest deletion
+  // stays on the page (optimistic list update); deleting the whole quest returns
+  // to the dashboard.
+  function confirmDelete() {
+    const target = pendingDelete;
+    if (!target) return;
+    setPendingDelete(null);
+    if (target.kind === 'subquest') {
+      const saved = optimisticDeleteProj(target.id);
+      startDelete(async () => {
+        try {
+          await deleteProject({ projectId: target.id });
+          router.refresh();
+        } catch {
+          if (saved) rollbackDeleteProj(saved);
+        }
+      });
+    } else {
+      startDelete(async () => {
+        try {
+          await deleteProject({ projectId: target.id });
+          router.push('/');
+          router.refresh();
+        } catch {
+          /* best-effort; a refresh will resync */
+        }
+      });
     }
   }
 
@@ -1157,7 +1187,7 @@ export default function ProjectWorkspace({ initialProjects, projectId, currentUs
         )}
 
         {/* Epic / recurrence / missed badges */}
-        {(label || missed || isEpic || isSubQuest || upcoming || countdown) && (
+        {(label || missed || isEpic || isSubQuest || upcoming || countdown || canSkipToday) && (
           <div className="flex flex-wrap gap-1.5 mt-2">
             {upcoming && project.availableAt && (
               <span className="inline-flex items-center rounded-md bg-zinc-800 border border-zinc-600/50 px-2 py-0.5 text-xs font-medium text-zinc-300">
@@ -1194,20 +1224,20 @@ export default function ProjectWorkspace({ initialProjects, projectId, currentUs
               </span>
             )}
             {missed && (
-              <span className="inline-flex items-center gap-1.5 rounded-md bg-red-950/50 border border-red-500/40 px-2 py-0.5 text-xs font-medium text-red-300">
+              <span className="inline-flex items-center rounded-md bg-red-950/50 border border-red-500/40 px-2 py-0.5 text-xs font-medium text-red-300">
                 ⚠ Missed
-                {canSkipMissed && (
-                  <button
-                    type="button"
-                    onClick={handleDismissMissed}
-                    disabled={isDismissing}
-                    title="Skip this missed day and keep the quest repeating"
-                    className="rounded bg-red-500/20 px-1.5 py-0.5 text-[11px] font-semibold text-red-200 hover:bg-red-500/30 disabled:opacity-50 transition-colors"
-                  >
-                    {isDismissing ? 'Skipping…' : 'Skip'}
-                  </button>
-                )}
               </span>
+            )}
+            {canSkipToday && (
+              <button
+                type="button"
+                onClick={handleSkipToday}
+                disabled={isSkipping}
+                title="Skip today and pick this quest back up on its next scheduled day"
+                className="inline-flex items-center gap-1 rounded-md border border-zinc-600/50 bg-zinc-800 px-2 py-0.5 text-xs font-medium text-zinc-300 hover:border-zinc-500 hover:text-zinc-100 disabled:opacity-50 transition-colors"
+              >
+                {isSkipping ? '⏭ Skipping…' : '⏭ Skip today'}
+              </button>
             )}
           </div>
         )}
@@ -1581,7 +1611,9 @@ export default function ProjectWorkspace({ initialProjects, projectId, currentUs
                           ↓
                         </button>
                         <button
-                          onClick={() => handleDeleteSubQuest(child.id, child.title)}
+                          onClick={() =>
+                            setPendingDelete({ id: child.id, title: child.title, kind: 'subquest' })
+                          }
                           aria-label={`Delete "${child.title}"`}
                           className="opacity-0 group-hover:opacity-100 text-zinc-500 hover:text-red-400 transition-all px-1 text-sm"
                         >
@@ -1984,6 +2016,37 @@ export default function ProjectWorkspace({ initialProjects, projectId, currentUs
         </CardContent>
       </Card>
       )}
+
+      {/* Danger zone — owner-only delete for a top-level quest/epic. */}
+      {isOwner && !isSubQuest && (
+        <div className="pt-2">
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() =>
+              setPendingDelete({ id: project.id, title: project.title, kind: 'project' })
+            }
+            disabled={isDeleting}
+            className="text-red-400 hover:text-red-300"
+          >
+            {isDeleting ? 'Deleting…' : '✕ Delete quest'}
+          </Button>
+        </div>
+      )}
+
+      <ConfirmDialog
+        open={pendingDelete != null}
+        title={
+          pendingDelete
+            ? `Delete ${pendingDelete.kind === 'subquest' ? 'sub-quest' : 'quest'} “${pendingDelete.title}”?`
+            : ''
+        }
+        message="This cannot be undone."
+        confirmLabel="Delete"
+        busy={isDeleting}
+        onConfirm={confirmDelete}
+        onCancel={() => setPendingDelete(null)}
+      />
     </main>
   );
 }

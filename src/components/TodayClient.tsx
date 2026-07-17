@@ -5,8 +5,14 @@ import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { RecurrenceType } from '@prisma/client';
 import { useProjectStore } from '@/store/useProjectStore';
-import { dismissMissedQuest, type ProjectWithRelations } from '@/app/actions/projects';
-import { recurrenceLabel, isMissed, questCategory, type QuestCategory } from '@/lib/recurrence';
+import { skipQuestToday, type ProjectWithRelations } from '@/app/actions/projects';
+import {
+  recurrenceLabel,
+  isMissed,
+  endOfLogicalDay,
+  questCategory,
+  type QuestCategory,
+} from '@/lib/recurrence';
 import { getQuestStatus, questProgress } from '@/lib/quest';
 import { difficultyMeta } from '@/lib/difficulty';
 import { isUpcoming, deadlineCountdown } from '@/lib/timing';
@@ -19,6 +25,7 @@ import { cn } from '@/lib/utils';
 
 interface Props {
   initialProjects: ProjectWithRelations[];
+  resetHour: number;
 }
 
 // Cadence containers. Order here is the display order.
@@ -34,7 +41,7 @@ function effectiveDueTime(project: ProjectWithRelations): number {
   return due ? new Date(due).getTime() : Number.POSITIVE_INFINITY;
 }
 
-export default function TodayClient({ initialProjects }: Props) {
+export default function TodayClient({ initialProjects, resetHour }: Props) {
   const hydrate = useProjectStore((s) => s.hydrate);
   const storeProjects = useProjectStore((s) => s.projects);
   const router = useRouter();
@@ -47,17 +54,33 @@ export default function TodayClient({ initialProjects }: Props) {
   const projects = storeProjects.length > 0 ? storeProjects : initialProjects;
   const now = new Date();
 
-  // Skip a missed recurring quest: drop the overdue cycle (no XP) and resume the
-  // schedule at the current occurrence. A refresh re-runs syncRecurringQuests.
-  function handleDismissMissed(projectId: string) {
+  // Skip today's occurrence of a repeating quest: drop the current (and any
+  // overdue) cycle with no XP and advance to the next scheduled day. A refresh
+  // re-runs syncRecurringQuests.
+  function handleSkipToday(projectId: string) {
     startTransition(async () => {
       try {
-        await dismissMissedQuest({ projectId });
+        await skipQuestToday({ projectId });
         router.refresh();
       } catch {
         /* best-effort; a refresh will resync the list */
       }
     });
+  }
+
+  // Whether a repeating quest can be skipped for today — it's due today (or
+  // overdue), not a one-off/specific-date, and not already finished.
+  function canSkipToday(project: ProjectWithRelations): boolean {
+    if (
+      project.recurrenceType === RecurrenceType.NONE ||
+      project.recurrenceType === RecurrenceType.SPECIFIC_DATE ||
+      !project.dueDate
+    ) {
+      return false;
+    }
+    if (getQuestStatus(project, projects) === 'completed') return false;
+    const todayEnd = endOfLogicalDay(now, project.resetHour ?? resetHour);
+    return new Date(project.dueDate) <= todayEnd;
   }
 
   // Active, top-level quests that are available now (upcoming ones are excluded
@@ -99,10 +122,7 @@ export default function TodayClient({ initialProjects }: Props) {
       },
       now,
     );
-    const canSkip =
-      missed &&
-      project.recurrenceType !== RecurrenceType.NONE &&
-      project.recurrenceType !== RecurrenceType.SPECIFIC_DATE;
+    const skippable = canSkipToday(project);
 
     return (
       <Link
@@ -143,25 +163,25 @@ export default function TodayClient({ initialProjects }: Props) {
           )}
           {label && <span className="text-zinc-500">{label}</span>}
           {missed && (
-            <span className="inline-flex items-center gap-1.5 rounded-md bg-red-950/50 border border-red-500/40 px-2 py-0.5 font-medium text-red-300">
+            <span className="inline-flex items-center rounded-md bg-red-950/50 border border-red-500/40 px-2 py-0.5 font-medium text-red-300">
               ⚠ Missed
-              {canSkip && (
-                <button
-                  type="button"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    e.preventDefault();
-                    handleDismissMissed(project.id);
-                  }}
-                  disabled={isPending}
-                  title="Skip this missed day and keep the quest repeating"
-                  aria-label={`Skip the missed "${project.title}" and keep it repeating`}
-                  className="rounded bg-red-500/20 px-1.5 py-0.5 text-[11px] font-semibold text-red-200 hover:bg-red-500/30 disabled:opacity-50 transition-colors"
-                >
-                  Skip
-                </button>
-              )}
             </span>
+          )}
+          {skippable && (
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                e.preventDefault();
+                handleSkipToday(project.id);
+              }}
+              disabled={isPending}
+              title="Skip today and pick this quest back up on its next scheduled day"
+              aria-label={`Skip "${project.title}" for today`}
+              className="inline-flex items-center gap-1 rounded-md border border-zinc-600/50 bg-zinc-800 px-2 py-0.5 font-medium text-zinc-300 hover:border-zinc-500 hover:text-zinc-100 disabled:opacity-50 transition-colors"
+            >
+              ⏭ Skip today
+            </button>
           )}
         </div>
       </Link>

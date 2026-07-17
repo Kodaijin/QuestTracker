@@ -22,11 +22,17 @@ import {
 } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
 import { useProjectStore } from '@/store/useProjectStore';
-import { createProject, deleteProject, dismissMissedQuest, reorderProjects } from '@/app/actions/projects';
+import { createProject, deleteProject, skipQuestToday, reorderProjects } from '@/app/actions/projects';
 import type { ProjectWithRelations } from '@/app/actions/projects';
 import { giveQuest, respondToQuestInvite } from '@/app/actions/party';
 import type { Ally, QuestInvite } from '@/app/actions/party';
-import { recurrenceLabel, isMissed, questCategory, type QuestCategory } from '@/lib/recurrence';
+import {
+  recurrenceLabel,
+  isMissed,
+  endOfLogicalDay,
+  questCategory,
+  type QuestCategory,
+} from '@/lib/recurrence';
 import { getQuestStatus, questProgress, type QuestStatus } from '@/lib/quest';
 import { difficultyMeta, DIFFICULTIES } from '@/lib/difficulty';
 import { isUpcoming, deadlineCountdown, formatActivatesIn } from '@/lib/timing';
@@ -40,6 +46,7 @@ import NotificationBell from '@/components/NotificationBell';
 import ShopNavLink from '@/components/ShopNavLink';
 import CountUp from '@/components/CountUp';
 import ProgressionHeader from '@/components/ProgressionHeader';
+import ConfirmDialog from '@/components/ConfirmDialog';
 
 interface Props {
   initialProjects: ProjectWithRelations[];
@@ -47,6 +54,7 @@ interface Props {
   pendingNoticeCount: number;
   allies: Ally[];
   pendingInvites: QuestInvite[];
+  userResetHour: number;
 }
 
 const statusCardStyles: Record<QuestStatus, string> = {
@@ -124,6 +132,7 @@ export default function DashboardClient({
   pendingNoticeCount,
   allies,
   pendingInvites,
+  userResetHour,
 }: Props) {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -151,6 +160,8 @@ export default function DashboardClient({
   const [isResponding, startRespond] = useTransition();
   const [showCompleted, setShowCompleted] = useState(false);
   const [showUpcoming, setShowUpcoming] = useState(true);
+  // Quest pending deletion, shown in the confirm dialog (null = dialog closed).
+  const [pendingDelete, setPendingDelete] = useState<{ id: string; title: string } | null>(null);
 
   // ── Search / filter state ─────────────────────────────────────────────────────
   const [search, setSearch] = useState('');
@@ -485,27 +496,45 @@ export default function DashboardClient({
     }
   }
 
-  async function handleDeleteProject(projectId: string, projectTitle: string) {
-    if (!window.confirm(`Delete quest "${projectTitle}"? This cannot be undone.`)) return;
-    const saved = optimisticDeleteProj(projectId);
+  async function confirmDeleteProject() {
+    if (!pendingDelete) return;
+    const { id } = pendingDelete;
+    setPendingDelete(null);
+    const saved = optimisticDeleteProj(id);
     try {
-      await deleteProject({ projectId });
+      await deleteProject({ projectId: id });
     } catch {
       if (saved) rollbackDeleteProj(saved);
     }
   }
 
-  // Skip a missed recurring quest: drop the overdue cycle (no XP) and resume the
-  // schedule at the current occurrence. A refresh re-runs syncRecurringQuests.
-  function handleDismissMissed(projectId: string) {
+  // Skip today's occurrence of a repeating quest: drop the current (and any
+  // overdue) cycle with no XP and advance to the next scheduled day. A refresh
+  // re-runs syncRecurringQuests.
+  function handleSkipToday(projectId: string) {
     startTransition(async () => {
       try {
-        await dismissMissedQuest({ projectId });
+        await skipQuestToday({ projectId });
         router.refresh();
       } catch {
         /* best-effort; a refresh will resync the board */
       }
     });
+  }
+
+  // Whether a repeating quest can be skipped for today — it's due today (or
+  // overdue), not a one-off/specific-date, and not already finished.
+  function canSkipToday(project: ProjectWithRelations): boolean {
+    if (
+      project.recurrenceType === RecurrenceType.NONE ||
+      project.recurrenceType === RecurrenceType.SPECIFIC_DATE ||
+      !project.dueDate
+    ) {
+      return false;
+    }
+    if (getQuestStatus(project, projects) === 'completed') return false;
+    const todayEnd = endOfLogicalDay(new Date(), project.resetHour ?? userResetHour);
+    return new Date(project.dueDate) <= todayEnd;
   }
 
   // Manual board reordering: persist a new active-quest order (used by both the
@@ -577,6 +606,7 @@ export default function DashboardClient({
       },
       now,
     );
+    const skippable = canSkipToday(project);
     const label = recurrenceLabel({
       ...project,
       dueDate: project.dueDate ? new Date(project.dueDate) : null,
@@ -647,26 +677,25 @@ export default function DashboardClient({
                     </span>
                   )}
                   {missed && (
-                    <span className="inline-flex items-center gap-1.5 rounded-md bg-red-950/50 border border-red-500/40 px-2 py-0.5 text-xs font-medium text-red-300">
+                    <span className="inline-flex items-center rounded-md bg-red-950/50 border border-red-500/40 px-2 py-0.5 text-xs font-medium text-red-300">
                       ⚠ Missed
-                      {project.recurrenceType !== RecurrenceType.NONE &&
-                        project.recurrenceType !== RecurrenceType.SPECIFIC_DATE && (
-                          <button
-                            type="button"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              e.preventDefault();
-                              handleDismissMissed(project.id);
-                            }}
-                            disabled={isPending}
-                            title="Skip this missed day and keep the quest repeating"
-                            aria-label={`Skip the missed "${project.title}" and keep it repeating`}
-                            className="rounded bg-red-500/20 px-1.5 py-0.5 text-[11px] font-semibold text-red-200 hover:bg-red-500/30 disabled:opacity-50 transition-colors"
-                          >
-                            Skip
-                          </button>
-                        )}
                     </span>
+                  )}
+                  {skippable && (
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        e.preventDefault();
+                        handleSkipToday(project.id);
+                      }}
+                      disabled={isPending}
+                      title="Skip today and pick this quest back up on its next scheduled day"
+                      aria-label={`Skip "${project.title}" for today`}
+                      className="inline-flex items-center gap-1 rounded-md border border-zinc-600/50 bg-zinc-800 px-2 py-0.5 text-xs font-medium text-zinc-300 hover:border-zinc-500 hover:text-zinc-100 disabled:opacity-50 transition-colors"
+                    >
+                      ⏭ Skip today
+                    </button>
                   )}
                   {upcoming && project.availableAt && (
                     <span className="inline-flex items-center rounded-md bg-zinc-800 border border-zinc-600/50 px-2 py-0.5 text-xs font-medium text-zinc-300">
@@ -771,7 +800,7 @@ export default function DashboardClient({
               onClick={(e) => {
                 e.stopPropagation();
                 e.preventDefault();
-                void handleDeleteProject(project.id, project.title);
+                setPendingDelete({ id: project.id, title: project.title });
               }}
               aria-label={`Delete "${project.title}"`}
               className="text-zinc-500 hover:text-red-400 text-sm px-1"
@@ -1784,6 +1813,15 @@ export default function DashboardClient({
           )}
         </>
       )}
+
+      <ConfirmDialog
+        open={pendingDelete != null}
+        title={pendingDelete ? `Delete “${pendingDelete.title}”?` : ''}
+        message="This cannot be undone."
+        confirmLabel="Delete"
+        onConfirm={() => void confirmDeleteProject()}
+        onCancel={() => setPendingDelete(null)}
+      />
     </main>
   );
 }

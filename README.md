@@ -277,6 +277,12 @@ quest-creation logic (`createProjectForUser`) as the web UI.
 
 ## Changelog
 
+### 2026-07-16: Skip today + in-app delete confirmation
+
+- **Skip today for repeating quests.** The old "Skip" (only on a missed quest) advanced the due date to *today*, so a missed daily immediately reappeared as a fresh quest due right now — feeling like the missed quest "stacked." Skipping now advances to the **next occurrence after today** (a daily → tomorrow), resetting objectives with no XP, so the quest leaves today's board and resumes on its next scheduled day. The action is exposed as a **⏭ Skip today** button on any active repeating quest (due today or overdue) — on the dashboard cards, the Today list, and the quest page — not just missed ones. `dismissMissedQuest` was renamed to `skipQuestToday` in `src/app/actions/projects.ts`; button visibility is gated by the user's reset hour (new `getMyResetHour` action, passed into the client components). Finishing a missed quest already advanced correctly, so that path is unchanged.
+- **In-app delete confirmation.** Deleting a quest used `window.confirm`, which often doesn't fire inside the Capacitor Android WebView (so deletes happened with no warning). New reusable `src/components/ConfirmDialog.tsx` (styled modal, backdrop/Escape to cancel) replaces it for quest deletion on the dashboard, plus sub-quest deletion and a new owner-only **Delete quest** button on the quest page.
+- Web-only change — no Android rebuild needed; the installed app picks it up after the server redeploys.
+
 ### 2026-07-11: Android app icon
 
 - Replaced the default Capacitor launcher icon with the QuestTracker crest. Source art lives in `assets/` (`icon-only.png` full-bleed, `icon-foreground.png` for the adaptive foreground); all densities + adaptive layers were generated with `npx @capacitor/assets generate --android --iconBackgroundColor '#000000'`, which writes into `android/app/src/main/res/mipmap-*`. Re-run that command after changing the source art. Requires an APK rebuild to take effect.

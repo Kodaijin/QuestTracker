@@ -11,7 +11,6 @@ import {
   computeNextDueDate,
   endOfLogicalDay,
   isCompletedThisCycle,
-  isMissed,
   type SchedulableQuest,
 } from '@/lib/recurrence';
 import { objectiveXp, itemXp, questXp } from '@/lib/progression';
@@ -1728,30 +1727,36 @@ export async function syncRecurringQuests(): Promise<void> {
   }
 }
 
-const dismissMissedQuestSchema = z.object({ projectId: z.string().min(1) });
+const skipQuestTodaySchema = z.object({ projectId: z.string().min(1) });
+
+/** The caller's effective global daily reset hour (0-23), for client-side gating. */
+export async function getMyResetHour(): Promise<number> {
+  return getUserResetHour(await requireUserId());
+}
 
 /**
- * "Skip" a missed recurring quest: forget the overdue cycle (no completion, no
- * XP) and resume the schedule at the current occurrence. The dueDate advances to
- * the earliest occurrence on/after now and objectives are reset to unchecked, so
- * the quest stops showing as ⚠ Missed but keeps repeating. Unlike completing it
- * late, this awards nothing and leaves today's occurrence available to do fresh.
+ * "Skip today" for a repeating quest: forget the current (and any overdue) cycle
+ * with no completion and no XP, and advance the schedule to the NEXT occurrence
+ * *after today*. The dueDate jumps to the first occurrence past the end of today's
+ * logical day and objectives are reset to unchecked — so the quest leaves today's
+ * board entirely (it doesn't pop back up as due today) and resumes on its next
+ * scheduled day. Works whether the quest is missed or just due today.
  *
- * Only repeating quests can be dismissed — one-offs (NONE) and SPECIFIC_DATE
- * quests have no next occurrence to fall back to.
+ * Only repeating quests can be skipped — one-offs (NONE) and SPECIFIC_DATE quests
+ * have no next occurrence to fall back to.
  */
-export async function dismissMissedQuest(
-  input: z.infer<typeof dismissMissedQuestSchema>,
+export async function skipQuestToday(
+  input: z.infer<typeof skipQuestTodaySchema>,
 ): Promise<void> {
   const userId = await requireUserId();
 
-  const parsed = dismissMissedQuestSchema.safeParse(input);
+  const parsed = skipQuestTodaySchema.safeParse(input);
   if (!parsed.success) {
     throw new Error(parsed.error.issues[0]?.message ?? 'Invalid input');
   }
   const { projectId } = parsed.data;
 
-  // Any participant (owner or accepted member) may dismiss, like other progress.
+  // Any participant (owner or accepted member) may skip, like other progress.
   await assertQuestParticipant(projectId, userId);
 
   const project = await prisma.project.findUnique({
@@ -1780,15 +1785,13 @@ export async function dismissMissedQuest(
   };
 
   const now = new Date();
-  // Only act on quests that are actually missed; otherwise this is a no-op.
-  if (!isMissed(quest, now)) return;
-
   const resetHour = project.resetHour ?? (await getUserResetHour(userId));
 
-  // Advance to the current occurrence — the first one on/after now — so the
-  // quest is due today (fresh) rather than skipped to the next period.
+  // Advance to the next occurrence strictly after today's logical day, so today's
+  // (and any missed) occurrence is dropped and nothing shows as due today.
+  const todayEnd = endOfLogicalDay(now, resetHour);
   let nextDue = computeNextDueDate(quest, project.dueDate, resetHour);
-  while (nextDue != null && nextDue < now) {
+  while (nextDue != null && nextDue <= todayEnd) {
     const following = computeNextDueDate(quest, nextDue, resetHour);
     if (following == null) break;
     nextDue = following;

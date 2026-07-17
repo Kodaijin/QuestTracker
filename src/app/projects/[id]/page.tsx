@@ -1,7 +1,7 @@
 import { notFound, redirect } from 'next/navigation';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
-import { getProjectsForUser, syncRecurringQuests } from '@/app/actions/projects';
+import { getMyResetHour, getProjectsForUser, syncRecurringQuests } from '@/app/actions/projects';
 import { listConnections } from '@/app/actions/party';
 import ProjectWorkspace from '@/components/ProjectWorkspace';
 
@@ -20,7 +20,7 @@ export default async function ProjectPage({
   if (!projects.find((p) => p.id === params.id)) notFound();
 
   const session = await getServerSession(authOptions);
-  const allies = await listConnections();
+  const [allies, resetHour] = await Promise.all([listConnections(), getMyResetHour()]);
 
   return (
     <ProjectWorkspace
@@ -28,6 +28,7 @@ export default async function ProjectPage({
       projectId={params.id}
       currentUserId={session!.user.id}
       allies={allies}
+      resetHour={resetHour}
     />
   );
 }
