@@ -277,6 +277,28 @@ export function isMissed(quest: SchedulableQuest, now: Date): boolean {
   return quest.dueDate != null && now > quest.dueDate && !isCompletedThisCycle(quest);
 }
 
+/**
+ * True when a repeating quest's current occurrence falls in a FUTURE logical day —
+ * its dueDate is past the end of today — so it's either been skipped for now or
+ * simply isn't scheduled today. Such quests are hidden from the active board until
+ * they come due. Non-repeating quests (NONE / SPECIFIC_DATE) are never hidden this
+ * way (a one-off stays on the board until it's done).
+ */
+export function isAwaitingNextOccurrence(
+  quest: { recurrenceType: RecurrenceType; dueDate: Date | null },
+  now: Date,
+  resetHour: number,
+): boolean {
+  if (
+    quest.recurrenceType === RecurrenceType.NONE ||
+    quest.recurrenceType === RecurrenceType.SPECIFIC_DATE ||
+    quest.dueDate == null
+  ) {
+    return false;
+  }
+  return quest.dueDate > endOfLogicalDay(now, resetHour);
+}
+
 // ── Cadence categorisation ────────────────────────────────────────────────────
 
 export type QuestCategory = 'daily' | 'weekly' | 'other';

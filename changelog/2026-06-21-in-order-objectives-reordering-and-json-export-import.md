@@ -1,0 +1,6 @@
+# 2026-06-21: In-order objectives, reordering, and JSON export/import
+
+
+- **In-order objectives**: a per-quest "Must be done in order" toggle (`Project.sequentialObjectives`) locks later objectives (🔒) until earlier ones are checked off — the objective-level analogue of an Epic's `sequential` sub-quests. Set it when creating a quest or from the quest's Objectives card. Enforced both in the UI and server-side in `toggleObjective` (mirrored by `lockedObjectiveIds` in `src/lib/quest.ts`)
+- **Reordering**: objectives, inventory items, and quests can all be rearranged with ↑/↓ controls. Inventory gains an `order` column and quests a `sortOrder` (backfilled by age); new `reorderObjective`, `reorderInventoryItem`, and `reorderProjects` server actions. The dashboard's active board now follows your manual order instead of listing recurring quests first
+- **Export & import**: a Settings card to download all your quests as JSON and import a file back. New `exportQuests` / `importQuests` actions in `src/app/actions/data.ts`. The snapshot carries no ids, XP, or party data, so importing never mints XP (XP stays derived from the CompletionEvent log); completion state round-trips and recurrence due-dates are recomputed on import

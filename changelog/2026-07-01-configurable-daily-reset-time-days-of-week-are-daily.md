@@ -1,0 +1,6 @@
+# 2026-07-01: Configurable daily reset time + Days-of-week are Daily
+
+
+- Repeating quests used to roll over at a hard-coded midnight boundary, so a quest finished late at night could reset right away. There's now a **daily reset time** (a "day" runs from the reset hour to the reset hour) that you set in **Settings → Daily reset time** (default **04:00**, so late-night activity still counts toward the previous day). Individual quests can override it with a **Reset time** picker in the New Quest form and the Schedule editor (`Project.resetHour`, null = follow the global default in `NotificationPreference.resetHour`)
+- The reset hour shifts the day boundary used by all recurrence math. `src/lib/recurrence.ts` now anchors on the *logical day* (`logicalDate`/`boundaryForDate`/`endOfLogicalDay`) and every `computeFirstDueDate` / `computeNextDueDate` / `occurrencesInRange` call passes the effective reset hour (`syncRecurringQuests`, `dismissMissedQuest`, `normaliseRecurrence`, import). Existing quests self-heal on their next roll-over — no backfill needed
+- **"Days of week" (multi-weekday) quests are now categorized as Daily**, not Weekly, since they can come due several days a week. They appear in the ☀ Daily container and their badge now reads e.g. `Mon, Wed, Fri` (`questCategory` + `recurrenceLabel` in `src/lib/recurrence.ts`)

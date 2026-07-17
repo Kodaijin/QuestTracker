@@ -1,0 +1,7 @@
+# 2026-06-20: Rich Discord embeds, a quest bot, and party progress notices
+
+
+- All Discord posts are now **rich embeds** (color-coded titles, fields, and quest links) instead of plain text. New `sendDiscordEmbed` sender and an `EmbedColors` palette in `src/lib/discord.ts`; every call site (reminder sweep, group-quest creation/invites, completions) was converted. Mentions stay in the message content since Discord won't ping from inside an embed
+- **Party progress notices**: when any member of a shared quest checks an objective off or gathers an item, the channel gets a "Quest Progress" embed showing who did it and a done/remaining breakdown, pinging the whole party. Wired into `toggleObjective` / `toggleInventoryItem` via a new `announceQuestProgress` helper, guarded to shared quests and skipped on the completing toggle (the completion embed covers that)
+- **Discord bot** (new `bot/` service): `/addquest` and `/quests` slash commands built on discord.js, shipped as its own Docker image and Compose service. It calls a new secured `POST /api/bot/quests` route (bearer-auth via `BOT_API_SECRET`) that maps the caller's numeric Discord ID to a user through `User.discordUsername` and reuses `createProjectForUser` — the same logic extracted from `createProject` so the UI and bot share one code path
+- New env vars: `BOT_API_SECRET`, `DISCORD_BOT_TOKEN`, `DISCORD_APP_ID`, `DISCORD_GUILD_ID` (all optional; the bot stays off until set). See `.env.example`

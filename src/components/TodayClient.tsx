@@ -10,6 +10,7 @@ import {
   recurrenceLabel,
   isMissed,
   endOfLogicalDay,
+  isAwaitingNextOccurrence,
   questCategory,
   type QuestCategory,
 } from '@/lib/recurrence';
@@ -84,12 +85,18 @@ export default function TodayClient({ initialProjects, resetHour }: Props) {
   }
 
   // Active, top-level quests that are available now (upcoming ones are excluded
-  // — they're not actionable yet).
+  // — they're not actionable yet). Repeating quests whose current occurrence is a
+  // future day (skipped, or not scheduled today) are hidden until they come due.
   const active = projects.filter(
     (p) =>
       p.parentId == null &&
       getQuestStatus(p, projects) !== 'completed' &&
-      !isUpcoming(p.availableAt, now),
+      !isUpcoming(p.availableAt, now) &&
+      !isAwaitingNextOccurrence(
+        { recurrenceType: p.recurrenceType, dueDate: p.dueDate ? new Date(p.dueDate) : null },
+        now,
+        p.resetHour ?? resetHour,
+      ),
   );
 
   // Group by cadence (Daily / Weekly / Other); within each, most urgent first.

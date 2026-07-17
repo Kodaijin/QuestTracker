@@ -1,0 +1,5 @@
+# 2026-07-11: FCM misconfiguration is no longer silent
+
+
+- Native (Android) push silently no-ops when `FCM_SERVICE_ACCOUNT_JSON` is unset or invalid, which made a broken setup hard to spot. `sendFcmToUser` (`src/lib/fcm.ts`) now logs a one-time warning when device tokens are registered but FCM is unconfigured, and the README's **Android app** setup is now an explicit both-ends checklist (Firebase app + `google-services.json` + rebuild + server credential). No behavior change when FCM is configured
+- Device token registration was previously fire-and-forget with no error listener, so a phone failing to register was invisible. `registerNativePush` (`src/lib/nativePush.ts`) now logs the permission result, the received token, the save outcome, and (new) any `registrationError`; `saveDeviceToken` logs a `[push] device token saved…` line server-side. These are served from the server, so a redeploy + app reload surfaces them via the WebView console (`chrome://inspect`) and `docker compose logs app` — no APK rebuild needed

@@ -1,0 +1,9 @@
+# 2026-07-11: Give a quest to an ally
+
+
+- **Give a quest** you built to a single ally to *do*. Hand it off either from the **New Quest** form (the **Party** section has a **Share (co-op) / Give to an ally** toggle) or later from the quest's **🎁 Give this quest** card. The recipient gets a full in-app alert + push and an **Accept / Decline** card on their Party page (reusing the existing `QuestMember` invite flow via `respondToQuestInvite`). New `giveQuest` action in `src/app/actions/party.ts`
+- Unlike a co-op shared quest, a **given quest** is one-to-one and locks editing to the giver: the recipient checks objectives off (they *can't* edit), while the giver keeps edit rights and watches progress. Marked by a new `Project.isGiven` flag (recipient membership is forced to `membersCanEdit=false`)
+- **XP is split**: the recipient earns **full** XP for completions, the giver earns **half** (`Math.floor`). A new `acceptedParticipants` helper in `src/app/actions/projects.ts` carries a per-user XP factor through `toggleObjective` / `toggleInventoryItem`
+- If the recipient declines (or gives it back via the quest's **Give it back** button), the quest frees up and can be given again
+- **Pending quests surface on the dashboard**: a "Quests awaiting your response" panel now sits above the board's search/filter row, listing both co-op invites and given quests with **Accept / Decline** buttons (reusing `respondToQuestInvite`) — no need to visit the Party page. Fed by `listQuestInvites()` in `src/app/page.tsx`
+- **Response notifications**: when someone accepts or declines a quest you invited them to (or gave them), you now get an in-app alert + push (+ Discord), e.g. *"@ally accepted the quest you gave them."* `respondToQuestInvite` emits a `party`-type notification back to the quest owner

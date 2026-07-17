@@ -30,6 +30,7 @@ import {
   recurrenceLabel,
   isMissed,
   endOfLogicalDay,
+  isAwaitingNextOccurrence,
   questCategory,
   type QuestCategory,
 } from '@/lib/recurrence';
@@ -241,8 +242,20 @@ export default function DashboardClient({
     .filter((p) => isUpcoming(p.availableAt, now))
     .sort((a, b) => new Date(a.availableAt!).getTime() - new Date(b.availableAt!).getTime());
   // Active quests follow the user's manual board order (see reorderProjects).
+  // Repeating quests whose current occurrence is a future day (skipped, or not
+  // scheduled today) are hidden until they come due — unless a search/filter is
+  // active, so they stay reachable when you go looking for them.
   const activeProjects = notCompleted
     .filter((p) => !isUpcoming(p.availableAt, now))
+    .filter(
+      (p) =>
+        filtersActive ||
+        !isAwaitingNextOccurrence(
+          { recurrenceType: p.recurrenceType, dueDate: p.dueDate ? new Date(p.dueDate) : null },
+          now,
+          p.resetHour ?? userResetHour,
+        ),
+    )
     .sort((a, b) => a.sortOrder - b.sortOrder);
   // Split the active board into cadence containers (Daily / Weekly / Other), each
   // preserving the manual sortOrder above. Reordering happens within a container.
